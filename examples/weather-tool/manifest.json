@@ -1,0 +1,20 @@
+{
+  "id": "weather-tool",
+  "name": "Live Weather Tool",
+  "version": "1.0.0",
+  "description": "Fetch real-time weather data and 7-day forecasts for any city worldwide using Open-Meteo API",
+  "author": "ActonOS Team",
+  "license": "MIT",
+  "capabilities": ["tool"],
+  "permissions": {
+    "net_outbound": ["api.open-meteo.com", "geocoding-api.open-meteo.com"],
+    "storage": true
+  },
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get current weather conditions (temperature, windspeed, weather code) and forecast for a specified city name",
+      "category": "weather"
+    }
+  ]
+}

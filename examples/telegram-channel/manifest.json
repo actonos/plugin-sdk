@@ -1,0 +1,21 @@
+{
+  "id": "telegram-channel",
+  "name": "Telegram Bot Channel Adapter",
+  "version": "1.0.0",
+  "description": "Telegram Bot messaging channel with long-polling, 6-digit PIN device pairing and rich formatting",
+  "author": "ActonOS Team",
+  "license": "MIT",
+  "capabilities": ["channel"],
+  "permissions": {
+    "net_outbound": ["api.telegram.org"],
+    "secrets": ["telegram_bot_token"],
+    "storage": true
+  },
+  "channels": [
+    {
+      "name": "telegram",
+      "display_name": "Telegram Bot",
+      "requires_pairing": true
+    }
+  ]
+}

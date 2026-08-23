@@ -1,0 +1,22 @@
+{
+  "id": "github-connector",
+  "name": "GitHub SaaS Connector",
+  "version": "1.0.0",
+  "description": "Seamless integration with GitHub API for inspecting repositories, issues, pull requests and committing changes",
+  "author": "ActonOS Team",
+  "license": "MIT",
+  "capabilities": ["connector"],
+  "permissions": {
+    "net_outbound": ["api.github.com"],
+    "secrets": ["github_access_token"],
+    "storage": true
+  },
+  "connectors": [
+    {
+      "name": "github",
+      "display_name": "GitHub",
+      "auth_type": "oauth2",
+      "actions": ["list_repos", "get_issue", "create_issue"]
+    }
+  ]
+}

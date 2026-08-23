@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActonOSPluginManifest",
+  "type": "object",
+  "required": ["id", "name", "version", "capabilities"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Unique plugin identifier (e.g. weather-tool, telegram-channel)"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable plugin name"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+",
+      "description": "Semantic versioning (e.g. 1.0.0)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed summary of what the plugin does"
+    },
+    "author": {
+      "type": "string",
+      "description": "Author name or organization"
+    },
+    "license": {
+      "type": "string",
+      "default": "MIT"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["tool", "channel", "connector"]
+      },
+      "minItems": 1,
+      "description": "Functional capabilities exposed by the plugin"
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "net_outbound": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Domain whitelist for outgoing HTTP requests (e.g. *.telegram.org, api.github.com)"
+        },
+        "secrets": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Hardware Vault keys requested by the plugin"
+        },
+        "storage": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether isolated SQLite KV storage is enabled for this plugin"
+        },
+        "bus_events": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Event topics the plugin is allowed to emit"
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string", "default": "plugin" },
+          "schema": { "type": "object" }
+        }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "display_name"],
+        "properties": {
+          "name": { "type": "string" },
+          "display_name": { "type": "string" },
+          "requires_pairing": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "display_name"],
+        "properties": {
+          "name": { "type": "string" },
+          "display_name": { "type": "string" },
+          "auth_type": { "type": "string", "enum": ["oauth2", "api_key", "bearer"] },
+          "actions": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "config_schema": {
+      "type": "object",
+      "description": "JSON schema for user-configurable settings"
+    }
+  }
+}
