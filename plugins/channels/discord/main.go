@@ -29,16 +29,26 @@ type DiscordAccount struct {
 	EnableReactions bool   `json:"enable_reactions"`
 }
 
+type GatewayState struct {
+	LastHeartbeat     time.Time
+	HeartbeatInterval time.Duration
+	LastSequence      *int64
+	SessionID         string
+}
+
 type DiscordChannel struct {
 	sdk.BaseChannel
-	mu      sync.Mutex
-	wsConns map[string]sdk.WebSocketConn
+	mu               sync.Mutex
+	wsConns          map[string]sdk.WebSocketConn
+	gatewayStates    map[string]*GatewayState
+	lastDialAttempts map[string]time.Time
 }
 
 type GatewayPayload struct {
 	Op int             `json:"op"`
 	D  json.RawMessage `json:"d"`
-	T  string          `json:"t"`
+	S  *int64          `json:"s,omitempty"`
+	T  string          `json:"t,omitempty"`
 }
 
 type DiscordUser struct {
@@ -195,11 +205,11 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 			continue
 		}
 
-		// 1. Process real-time events from Discord Gateway WebSocket via ctx.WS()
+		// 1. Process real-time events from Discord Gateway WebSocket
 		wsMsgs := d.pollGatewayWebSocket(ctx, acc, token)
 		allInbound = append(allInbound, wsMsgs...)
 
-		// 2. HTTP Polling fallback if needed
+		// 2. HTTP Polling fallback if configured
 		httpMsgs, err := d.pollHTTPMessages(ctx, token, acc)
 		if err == nil && len(httpMsgs) > 0 {
 			allInbound = append(allInbound, httpMsgs...)
@@ -215,6 +225,29 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 		return nil
 	}
 
+	d.mu.Lock()
+	state := d.gatewayStates[acc.AccountID]
+	if state == nil {
+		state = &GatewayState{
+			HeartbeatInterval: 41 * time.Second,
+		}
+		d.gatewayStates[acc.AccountID] = state
+	}
+	d.mu.Unlock()
+
+	// Proactive Heartbeat check: Send Heartbeat to keep connection alive 24/7
+	if !state.LastHeartbeat.IsZero() && time.Since(state.LastHeartbeat) >= state.HeartbeatInterval {
+		var seq any = nil
+		if state.LastSequence != nil {
+			seq = *state.LastSequence
+		}
+		_ = conn.SendJSON(map[string]any{
+			"op": 1,
+			"d":  seq,
+		})
+		state.LastHeartbeat = time.Now()
+	}
+
 	var messages []sdk.InboundMessage
 
 	// Read pending WebSocket frames from Gateway stream
@@ -225,6 +258,7 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 			d.mu.Lock()
 			delete(d.wsConns, acc.AccountID)
 			d.mu.Unlock()
+			ctx.Log().Warn("Discord gateway connection lost, will reconnect", "account_id", acc.AccountID, "err", err)
 			break
 		}
 		if !hasMsg || len(rawBytes) == 0 {
@@ -236,13 +270,33 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 			continue
 		}
 
+		if payload.S != nil {
+			state.LastSequence = payload.S
+		}
+
 		switch payload.Op {
-		case 10: // HELLO -> Send IDENTIFY
+		case 10: // HELLO -> Read heartbeat_interval & Send IDENTIFY
+			var helloData struct {
+				HeartbeatInterval int `json:"heartbeat_interval"`
+			}
+			if err := json.Unmarshal(payload.D, &helloData); err == nil && helloData.HeartbeatInterval > 0 {
+				state.HeartbeatInterval = time.Duration(helloData.HeartbeatInterval) * time.Millisecond
+			}
+
+			// Send immediate first Heartbeat
+			var seq any = nil
+			if state.LastSequence != nil {
+				seq = *state.LastSequence
+			}
+			_ = conn.SendJSON(map[string]any{"op": 1, "d": seq})
+			state.LastHeartbeat = time.Now()
+
+			// Send Opcode 2 IDENTIFY with GUILDS (1) + GUILD_MESSAGES (512) + DIRECT_MESSAGES (4096) + MESSAGE_CONTENT (32768) = 37377
 			identifyPayload := GatewayPayload{
 				Op: 2, // IDENTIFY
 				D: json.RawMessage(fmt.Sprintf(`{
 					"token": "%s",
-					"intents": 33280,
+					"intents": 37377,
 					"properties": {
 						"os": "actonos",
 						"browser": "actonos-plugin",
@@ -251,41 +305,82 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 				}`, token)),
 			}
 			_ = conn.SendJSON(identifyPayload)
+			ctx.Log().Info("Identified with Discord Gateway", "account_id", acc.AccountID, "intents", 37377)
 
-		case 0: // DISPATCH -> Process MESSAGE_CREATE events
-			if payload.T == "MESSAGE_CREATE" {
+		case 11: // HEARTBEAT_ACK
+			state.LastHeartbeat = time.Now()
+
+		case 1: // HEARTBEAT REQUESTED by Discord -> Reply immediately
+			var seq any = nil
+			if state.LastSequence != nil {
+				seq = *state.LastSequence
+			}
+			_ = conn.SendJSON(map[string]any{"op": 1, "d": seq})
+			state.LastHeartbeat = time.Now()
+
+		case 7, 9: // RECONNECT or INVALID_SESSION -> Reset connection
+			d.mu.Lock()
+			delete(d.wsConns, acc.AccountID)
+			d.mu.Unlock()
+			ctx.Log().Info("Received reconnect/invalid session from Discord Gateway, resetting", "op", payload.Op)
+			return messages
+
+		case 0: // DISPATCH -> Process Events
+			if payload.T == "READY" {
+				var readyData struct {
+					SessionID string      `json:"session_id"`
+					User      DiscordUser `json:"user"`
+				}
+				if err := json.Unmarshal(payload.D, &readyData); err == nil {
+					state.SessionID = readyData.SessionID
+					ctx.Log().Info("Discord Gateway Session Ready", "bot_user", readyData.User.Username, "account_id", acc.AccountID)
+				}
+			} else if payload.T == "MESSAGE_CREATE" {
 				var msg DiscordMessage
 				if err := json.Unmarshal(payload.D, &msg); err == nil && !msg.Author.Bot {
-					cleanContent := cleanDiscordMentions(msg.Content)
+					rawContent := strings.TrimSpace(msg.Content)
+					if rawContent == "" {
+						ctx.Log().Warn("Received empty message content from Discord. Ensure 'MESSAGE CONTENT INTENT' is enabled in Discord Developer Portal -> Bot -> Privileged Gateway Intents", "channel_id", msg.ChannelID)
+						continue
+					}
+
+					cleanContent := cleanDiscordMentions(rawContent)
+					if cleanContent == "" {
+						cleanContent = rawContent
+					}
+
+					targetAgent, finalContent := sdk.ExtractAgentMention(cleanContent)
+					if targetAgent == "" && acc.DefaultAgent != "" {
+						targetAgent = acc.DefaultAgent
+					}
+					if finalContent == "" {
+						finalContent = cleanContent
+					}
+
 					inbound := sdk.NewInboundMessage(
 						"discord",
 						acc.AccountID,
 						msg.Author.ID,
 						msg.Author.Username,
-						cleanContent,
+						finalContent,
 					)
+					inbound.TargetAgent = targetAgent
 					inbound.Metadata["channel_id"] = msg.ChannelID
 					inbound.Metadata["guild_id"] = msg.GuildID
 					inbound.Metadata["message_id"] = msg.ID
 					inbound.Metadata["account_id"] = acc.AccountID
 
-					if inbound.TargetAgent == "" && acc.DefaultAgent != "" {
-						inbound.TargetAgent = acc.DefaultAgent
-					}
-
 					messages = append(messages, inbound)
 					_ = ctx.EventBus().Emit("channel.discord.received", inbound)
+					ctx.Log().Info("Discord message received", "from", msg.Author.Username, "channel_id", msg.ChannelID, "content", finalContent, "target_agent", targetAgent)
 
-					// 1. Trigger live typing indicator so Discord shows "[Bot] is typing..."
+					// 1. Trigger live typing indicator
 					sendDiscordTyping(ctx, token, msg.ChannelID)
 
 					// 2. React with 👀 emoji to acknowledge prompt receipt
 					addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, "👀")
 				}
 			}
-
-		case 1: // HEARTBEAT requested -> Reply with Opcode 1
-			_ = conn.SendJSON(map[string]any{"op": 1, "d": nil})
 		}
 	}
 
@@ -299,10 +394,24 @@ func (d *DiscordChannel) getOrDialGateway(ctx sdk.Context, accountID string) (sd
 	if d.wsConns == nil {
 		d.wsConns = make(map[string]sdk.WebSocketConn)
 	}
+	if d.gatewayStates == nil {
+		d.gatewayStates = make(map[string]*GatewayState)
+	}
+	if d.lastDialAttempts == nil {
+		d.lastDialAttempts = make(map[string]time.Time)
+	}
 
 	if conn, exists := d.wsConns[accountID]; exists && conn != nil {
 		return conn, nil
 	}
+
+	// 15-second cooldown between retry attempts if previous attempt failed
+	if lastAttempt, exists := d.lastDialAttempts[accountID]; exists {
+		if time.Since(lastAttempt) < 15*time.Second {
+			return nil, fmt.Errorf("discord gateway dial on cooldown")
+		}
+	}
+	d.lastDialAttempts[accountID] = time.Now()
 
 	gatewayURL := "wss://gateway.discord.gg/?v=10&encoding=json"
 	conn, err := ctx.WS().Dial(gatewayURL, nil)
@@ -317,7 +426,11 @@ func (d *DiscordChannel) getOrDialGateway(ctx sdk.Context, accountID string) (sd
 func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc DiscordAccount) ([]sdk.InboundMessage, error) {
 	listenChannelID := acc.ListenChannelID
 	if listenChannelID == "" {
-		listenChannelID = "default"
+		if stored, ok, _ := ctx.Storage().Get("listen_channel_id"); ok && stored != "" {
+			listenChannelID = stored
+		} else {
+			listenChannelID = "default"
+		}
 	}
 
 	storageKey := fmt.Sprintf("last_msg_id_%s_%s", acc.AccountID, listenChannelID)
@@ -349,20 +462,26 @@ func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc Dis
 		newestID = msg.ID
 
 		cleanContent := cleanDiscordMentions(msg.Content)
+		if cleanContent == "" {
+			cleanContent = msg.Content
+		}
+
+		targetAgent, finalContent := sdk.ExtractAgentMention(cleanContent)
+		if targetAgent == "" && acc.DefaultAgent != "" {
+			targetAgent = acc.DefaultAgent
+		}
+
 		inbound := sdk.NewInboundMessage(
 			"discord",
 			acc.AccountID,
 			msg.Author.ID,
 			msg.Author.Username,
-			cleanContent,
+			finalContent,
 		)
+		inbound.TargetAgent = targetAgent
 		inbound.Metadata["channel_id"] = msg.ChannelID
 		inbound.Metadata["message_id"] = msg.ID
 		inbound.Metadata["account_id"] = acc.AccountID
-
-		if inbound.TargetAgent == "" && acc.DefaultAgent != "" {
-			inbound.TargetAgent = acc.DefaultAgent
-		}
 
 		inboundMsgs = append(inboundMsgs, inbound)
 		_ = ctx.EventBus().Emit("channel.discord.received", inbound)
@@ -417,7 +536,7 @@ func getBotToken(ctx sdk.Context, accountID string) (string, error) {
 		}
 	}
 
-	for _, k := range []string{"discord_bot_token", "bot_token", "token"} {
+	for _, k := range []string{"discord_bot_token", "bot_token"} {
 		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
 			return token, nil
 		}
@@ -485,7 +604,8 @@ func init() {
 			ChannelDisplayName: "Discord Bot (Gateway & REST)",
 			PairingRequired:    true,
 		},
-		wsConns: make(map[string]sdk.WebSocketConn),
+		wsConns:       make(map[string]sdk.WebSocketConn),
+		gatewayStates: make(map[string]*GatewayState),
 	}
 	sdk.RegisterChannel(ch)
 }

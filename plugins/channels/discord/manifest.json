@@ -5,12 +5,23 @@
   "description": "Discord Bot integration for ActonOS AI agents with rich embeds, multi-account gateway, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
-  "capabilities": ["channel"],
+  "capabilities": [
+    "channel"
+  ],
   "permissions": {
-    "net_outbound": ["discord.com", "gateway.discord.gg"],
-    "secrets": ["discord_bot_token", "discord_bot_tokens.*"],
+    "net_outbound": [
+      "discord.com",
+      "gateway.discord.gg"
+    ],
+    "secrets": [
+      "discord_bot_token",
+      "discord_bot_token.*"
+    ],
     "storage": true,
-    "bus_events": ["channel.discord.received", "channel.discord.sent"]
+    "bus_events": [
+      "channel.discord.received",
+      "channel.discord.sent"
+    ]
   },
   "channels": [
     {
@@ -39,7 +50,11 @@
         "x-ui-group": "Bot Accounts",
         "items": {
           "type": "object",
-          "required": ["account_id", "bot_token", "default_agent"],
+          "required": [
+            "account_id",
+            "bot_token",
+            "default_agent"
+          ],
           "properties": {
             "account_id": {
               "type": "string",
@@ -54,7 +69,7 @@
               "description": "Friendly label for this bot account",
               "x-ui-placeholder": "Customer Support Bot"
             },
-            "bot_token": {
+            "discord_bot_token": {
               "type": "string",
               "title": "Discord Bot Token",
               "description": "Bot Token from Discord Developer Portal (securely stored in Hardware Vault)",
