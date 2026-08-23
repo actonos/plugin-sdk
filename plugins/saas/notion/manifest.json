@@ -39,7 +39,7 @@
       "name": "connector_notion_search_pages",
       "description": "Search Notion pages and databases",
       "category": "notion",
-      "schema": {
+      "parameters": {
         "type": "object",
         "properties": {
           "query": {
@@ -57,7 +57,7 @@
       "name": "connector_notion_create_page",
       "description": "Create a new page in Notion workspace or database",
       "category": "notion",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["parent_page_id", "title"],
         "properties": {
@@ -80,7 +80,7 @@
       "name": "connector_notion_query_database",
       "description": "Query items from a Notion database",
       "category": "notion",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["database_id"],
         "properties": {
@@ -99,7 +99,7 @@
       "name": "connector_notion_append_block_children",
       "description": "Append text blocks or notes to a Notion page",
       "category": "notion",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["block_id", "content"],
         "properties": {

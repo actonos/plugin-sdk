@@ -39,7 +39,7 @@
       "name": "connector_linear_list_issues",
       "description": "List issues from Linear workspace",
       "category": "linear",
-      "schema": {
+      "parameters": {
         "type": "object",
         "properties": {
           "team_key": {
@@ -57,7 +57,7 @@
       "name": "connector_linear_create_issue",
       "description": "Create a new issue/task in Linear",
       "category": "linear",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["team_id", "title"],
         "properties": {
@@ -84,7 +84,7 @@
       "name": "connector_linear_update_issue_status",
       "description": "Update the state or status of a Linear issue",
       "category": "linear",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["issue_id", "state_id"],
         "properties": {

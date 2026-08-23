@@ -113,22 +113,22 @@ func (r *PluginRunner) ExecuteTool(toolName string, inputJSON []byte) (*sdk.Tool
 		return nil, fmt.Errorf("plugin does not export 'acton_tool_execute'")
 	}
 
-	envelope := sdk.ToolExecutionRequest{
-		ToolName: toolName,
-		Input:    inputJSON,
-	}
-	envBytes, err := json.Marshal(envelope)
+	namePtr, nameLen, err := r.writeBytes([]byte(toolName))
 	if err != nil {
-		return nil, fmt.Errorf("marshaling tool envelope: %w", err)
+		return nil, fmt.Errorf("writing toolName into wasm linear memory: %w", err)
 	}
+	defer r.free(namePtr, nameLen)
 
-	ptr, length, err := r.writeBytes(envBytes)
+	if len(inputJSON) == 0 {
+		inputJSON = []byte("{}")
+	}
+	argsPtr, argsLen, err := r.writeBytes(inputJSON)
 	if err != nil {
-		return nil, fmt.Errorf("writing input into wasm linear memory: %w", err)
+		return nil, fmt.Errorf("writing input JSON into wasm linear memory: %w", err)
 	}
-	defer r.free(ptr, length)
+	defer r.free(argsPtr, argsLen)
 
-	results, err := execFunc.Call(r.ctx, uint64(ptr), uint64(length))
+	results, err := execFunc.Call(r.ctx, uint64(namePtr), uint64(nameLen), uint64(argsPtr), uint64(argsLen))
 	if err != nil {
 		return nil, fmt.Errorf("calling acton_tool_execute: %w", err)
 	}

@@ -39,7 +39,7 @@
       "name": "connector_slack_post_message",
       "description": "Post a message or notification to a Slack channel",
       "category": "slack",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["channel", "text"],
         "properties": {
@@ -62,7 +62,7 @@
       "name": "connector_slack_list_channels",
       "description": "List public and private channels in Slack workspace",
       "category": "slack",
-      "schema": {
+      "parameters": {
         "type": "object",
         "properties": {
           "types": {
@@ -80,7 +80,7 @@
       "name": "connector_slack_get_history",
       "description": "Retrieve recent message history from a Slack channel",
       "category": "slack",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["channel"],
         "properties": {

@@ -87,7 +87,7 @@ func acton_free(ptr uint32, length uint32)
 func acton_plugin_init() int32
 
 //go:wasmexport acton_tool_execute
-func acton_tool_execute(ptr uint32, length uint32) uint64 // Returns packed (ptr << 32 | len)
+func acton_tool_execute(namePtr uint32, nameLen uint32, argsPtr uint32, argsLen uint32) uint64 // Returns packed (ptr << 32 | len)
 
 //go:wasmexport acton_channel_send
 func acton_channel_send(ptr uint32, length uint32) int32

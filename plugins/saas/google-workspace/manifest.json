@@ -39,7 +39,7 @@
       "name": "connector_google-workspace_send_email",
       "description": "Send an email via Gmail API",
       "category": "google",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["to", "subject", "body"],
         "properties": {
@@ -62,7 +62,7 @@
       "name": "connector_google-workspace_create_calendar_event",
       "description": "Schedule a meeting or calendar event via Google Calendar API",
       "category": "google",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["summary", "start_time", "end_time"],
         "properties": {
@@ -89,7 +89,7 @@
       "name": "connector_google-workspace_list_drive_files",
       "description": "Search and list files on Google Drive",
       "category": "google",
-      "schema": {
+      "parameters": {
         "type": "object",
         "properties": {
           "query": {
@@ -107,7 +107,7 @@
       "name": "connector_google-workspace_get_doc_content",
       "description": "Retrieve document text content from Google Docs",
       "category": "google",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["document_id"],
         "properties": {

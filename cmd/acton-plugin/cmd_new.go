@@ -151,7 +151,17 @@ func generateManifest(name, pType string) string {
     {
       "name": "%s",
       "description": "Executes %s action for ReAct agents",
-      "category": "plugin"
+      "category": "plugin",
+      "parameters": {
+        "type": "object",
+        "required": ["input"],
+        "properties": {
+          "input": {
+            "type": "string",
+            "description": "Input argument text"
+          }
+        }
+      }
     }
   ]
 }

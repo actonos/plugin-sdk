@@ -137,7 +137,7 @@ func TestToolPanicSafety(t *testing.T) {
 	ptr, length := abi.BytesToPtr(inputJSON)
 	defer abi.Free(ptr, length)
 
-	packed := sdk.ActonToolExecuteTestWrapper(ptr, length)
+	packed := sdk.ActonToolExecuteTestWrapper(ptr, length, 0, 0)
 	resPtr, resLen := abi.UnpackPtrLen(packed)
 	defer abi.Free(resPtr, resLen)
 

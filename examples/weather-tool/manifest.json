@@ -15,7 +15,7 @@
       "name": "get_weather",
       "description": "Get current weather conditions (temperature, windspeed, weather code) and forecast for a specified city name",
       "category": "weather",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["city"],
         "properties": {

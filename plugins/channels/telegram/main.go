@@ -10,6 +10,9 @@ import (
 
 // TelegramConfig defines the root configuration model for the Telegram channel plugin.
 type TelegramConfig struct {
+	TelegramBotToken    string            `json:"telegram_bot_token"`
+	BotToken            string            `json:"bot_token"`
+	DefaultAgent        string            `json:"default_agent"`
 	PollIntervalSeconds int               `json:"poll_interval_seconds"`
 	Accounts            []TelegramAccount `json:"accounts"`
 }
@@ -123,10 +126,16 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 
 	accounts := cfg.Accounts
 	if len(accounts) == 0 {
+		defaultToken := cfg.TelegramBotToken
+		if defaultToken == "" {
+			defaultToken = cfg.BotToken
+		}
 		accounts = []TelegramAccount{
 			{
-				AccountID:   "default",
-				DisplayName: "Default Telegram Bot",
+				AccountID:    "default",
+				DisplayName:  "Default Telegram Bot",
+				BotToken:     defaultToken,
+				DefaultAgent: cfg.DefaultAgent,
 			},
 		}
 	}
@@ -136,45 +145,48 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	for _, acc := range accounts {
 		token, err := getTelegramBotToken(ctx, acc)
 		if err != nil || token == "" {
-			ctx.Log().Debug("Telegram bot token not found for account", "account_id", acc.AccountID)
 			continue
 		}
 
-		offsetKey := fmt.Sprintf("last_update_id_%s", acc.AccountID)
+		offsetKey := fmt.Sprintf("telegram_offset_%s", acc.AccountID)
+		lastOffsetStr, ok, _ := ctx.Storage().Get(offsetKey)
 		offset := 0
-		if rawOffset, ok, _ := ctx.Storage().Get(offsetKey); ok && rawOffset != "" {
-			offset, _ = strconv.Atoi(rawOffset)
-		} else if rawOffset, ok, _ := ctx.Storage().Get("last_update_id"); ok && rawOffset != "" {
-			offset, _ = strconv.Atoi(rawOffset)
+		if ok && lastOffsetStr != "" {
+			offset, _ = strconv.Atoi(lastOffsetStr)
 		}
 
-		reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?limit=10", token)
+		pollInterval := cfg.PollIntervalSeconds
+		if pollInterval <= 0 {
+			pollInterval = 2
+		}
+
+		reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?limit=20&timeout=%d", token, pollInterval)
 		if offset > 0 {
-			reqURL = fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&limit=10", token, offset)
+			reqURL = fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&limit=20&timeout=%d", token, offset, pollInterval)
 		}
 
 		resp, err := ctx.HTTP().Get(reqURL)
 		if err != nil {
-			ctx.Log().Warn("Telegram getUpdates request failed", "account_id", acc.AccountID, "err", err)
+			ctx.Log().Warn("Telegram getUpdates network error", "account_id", acc.AccountID, "err", err)
 			continue
 		}
 
-		// Handle Webhook Conflict (409) -> automatically delete existing webhook so getUpdates works
-		if resp.Status == 409 || (resp.Body != "" && strings.Contains(resp.Body, "can't use getUpdates method while webhook is active")) {
-			ctx.Log().Info("Telegram active webhook detected, clearing webhook for polling mode...", "account_id", acc.AccountID)
+		// Auto-delete webhook if 409 Conflict occurs (reverts to long polling mode)
+		if resp.Status == 409 || strings.Contains(resp.Body, "webhook is active") {
+			ctx.Log().Info("Active webhook detected, deleting webhook to enable long-polling...", "account_id", acc.AccountID)
 			delURL := fmt.Sprintf("https://api.telegram.org/bot%s/deleteWebhook?drop_pending_updates=false", token)
 			_, _ = ctx.HTTP().Get(delURL)
 			continue
 		}
 
 		if resp.Status != 200 {
-			ctx.Log().Warn("Telegram getUpdates returned non-200", "account_id", acc.AccountID, "status", resp.Status, "body", resp.Body)
+			ctx.Log().Warn("Telegram getUpdates non-200 status", "status", resp.Status, "body", resp.Body)
 			continue
 		}
 
 		var apiResp TelegramAPIResponse
 		if err := resp.JSON(&apiResp); err != nil {
-			ctx.Log().Warn("Telegram getUpdates JSON parse failed", "err", err, "raw", resp.Body)
+			ctx.Log().Warn("Failed to parse Telegram updates response", "account_id", acc.AccountID, "body", resp.Body)
 			continue
 		}
 
@@ -244,11 +256,25 @@ func getTelegramBotToken(ctx sdk.Context, acc TelegramAccount) (string, error) {
 		}
 	}
 
-	if token, err := ctx.Vault().GetSecret("telegram_bot_token"); err == nil && token != "" {
-		return token, nil
+	// Direct vault lookup
+	for _, k := range []string{"telegram_bot_token", "bot_token", "token"} {
+		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
+			return token, nil
+		}
 	}
-	if token, err := ctx.Vault().GetSecret("bot_token"); err == nil && token != "" {
-		return token, nil
+
+	// Direct config store lookup
+	for _, k := range []string{"telegram_bot_token", "bot_token", "token"} {
+		if token := ctx.Config().GetString(k, ""); token != "" {
+			return token, nil
+		}
+	}
+
+	// KV storage lookup
+	for _, k := range []string{"telegram_bot_token", "bot_token", "token"} {
+		if token, ok, _ := ctx.Storage().Get(k); ok && token != "" {
+			return token, nil
+		}
 	}
 
 	return "", fmt.Errorf("missing telegram bot token for account %q in vault or config", accountID)

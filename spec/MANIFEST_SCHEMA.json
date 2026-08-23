@@ -73,7 +73,14 @@
           "name": { "type": "string" },
           "description": { "type": "string" },
           "category": { "type": "string", "default": "plugin" },
-          "schema": { "type": "object" }
+          "parameters": {
+            "type": "object",
+            "description": "JSON Schema (Draft-07 compliant) defining LLM function calling arguments"
+          },
+          "schema": {
+            "type": "object",
+            "description": "Alias for parameters (JSON Schema definition)"
+          }
         }
       }
     },

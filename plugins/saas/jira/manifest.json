@@ -45,7 +45,7 @@
       "name": "connector_jira_search_issues_jql",
       "description": "Search Jira issues using JQL (Jira Query Language)",
       "category": "jira",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["jql"],
         "properties": {
@@ -64,7 +64,7 @@
       "name": "connector_jira_create_issue",
       "description": "Create a new Jira issue (Bug, Task, Story)",
       "category": "jira",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["project_key", "summary"],
         "properties": {
@@ -92,7 +92,7 @@
       "name": "connector_jira_transition_issue",
       "description": "Move a Jira issue to a new workflow status",
       "category": "jira",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["issue_key", "transition_id"],
         "properties": {

@@ -8,7 +8,7 @@
   "capabilities": ["channel"],
   "permissions": {
     "net_outbound": ["api.telegram.org"],
-    "secrets": ["telegram_bot_token", "telegram_bot_tokens.*"],
+    "secrets": ["telegram_bot_token", "telegram_bot_tokens.*", "bot_token"],
     "storage": true,
     "bus_events": ["channel.telegram.received", "channel.telegram.sent"]
   },
@@ -22,6 +22,23 @@
   "config_schema": {
     "type": "object",
     "properties": {
+      "telegram_bot_token": {
+        "type": "string",
+        "title": "Telegram Bot Token",
+        "description": "Primary Bot Token from @BotFather (e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ)",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-group": "Primary Bot Settings",
+        "x-ui-placeholder": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+      },
+      "default_agent": {
+        "type": "string",
+        "title": "Default Target Agent",
+        "description": "Default ActonOS agent to dispatch incoming messages when no @mention is present",
+        "x-ui-widget": "agent-selector",
+        "x-ui-group": "Primary Bot Settings",
+        "x-ui-placeholder": "agent-support"
+      },
       "poll_interval_seconds": {
         "type": "integer",
         "title": "Polling Interval (seconds)",
@@ -33,13 +50,12 @@
       },
       "accounts": {
         "type": "array",
-        "title": "Telegram Bot Accounts",
-        "description": "Configure one or multiple Telegram bot instances",
-        "minItems": 1,
-        "x-ui-group": "Bot Accounts",
+        "title": "Additional Bot Accounts (Multi-Bot)",
+        "description": "Configure additional Telegram bot instances for different departments or teams",
+        "x-ui-group": "Advanced Multi-Bot Accounts",
         "items": {
           "type": "object",
-          "required": ["account_id", "bot_token", "default_agent"],
+          "required": ["account_id", "bot_token"],
           "properties": {
             "account_id": {
               "type": "string",
@@ -65,7 +81,7 @@
             "default_agent": {
               "type": "string",
               "title": "Default Target Agent",
-              "description": "Default ActonOS agent to dispatch incoming messages when no @mention is present",
+              "description": "Default ActonOS agent for this bot instance",
               "x-ui-widget": "agent-selector",
               "x-ui-placeholder": "agent-support"
             }

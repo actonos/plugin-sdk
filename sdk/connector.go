@@ -3,6 +3,7 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ActionHandler is a function that executes a specific SaaS connector action.
@@ -76,11 +77,34 @@ func (b *BaseConnector) RegisterAction(action string, handler ActionHandler) {
 }
 
 func (b *BaseConnector) DispatchAction(ctx Context, action string, params []byte) (any, error) {
-	handler, exists := b.actionHandlers[action]
-	if !exists {
-		return nil, fmt.Errorf("unknown connector action: %s", action)
+	if handler, exists := b.actionHandlers[action]; exists {
+		return handler(ctx, params)
 	}
-	return handler(ctx, params)
+
+	// Try normalized variants (connector_github_list_repos -> list_repos)
+	normalized := strings.ToLower(strings.ReplaceAll(action, "-", "_"))
+	prefixes := []string{
+		"connector_" + strings.ToLower(b.ConnectorName) + "_",
+		strings.ToLower(b.ConnectorName) + "_",
+		"connector_",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(normalized, p) {
+			trimmed := strings.TrimPrefix(normalized, p)
+			if handler, exists := b.actionHandlers[trimmed]; exists {
+				return handler(ctx, params)
+			}
+		}
+	}
+
+	// Try case-insensitive matching across all registered actions
+	for k, handler := range b.actionHandlers {
+		if strings.EqualFold(strings.ReplaceAll(k, "-", "_"), normalized) {
+			return handler(ctx, params)
+		}
+	}
+
+	return nil, fmt.Errorf("unknown connector action: %s (available: %v)", action, b.Actions())
 }
 
 // RegisterTypedAction binds a strongly-typed struct handler to a connector action with auto-generated schema.
@@ -156,14 +180,28 @@ func (c *connectorToolBridge) Execute(ctx Context, inputJSON []byte) (*ToolResul
 	}
 	switch v := out.(type) {
 	case string:
+		if v == "" {
+			v = "success"
+		}
 		return NewResult(v), nil
 	case map[string]any:
-		return NewResultData("success", v), nil
+		b, err := json.Marshal(v)
+		if err != nil {
+			return NewResultData("success", v), nil
+		}
+		return &ToolResult{
+			Content: string(b),
+			Data:    v,
+		}, nil
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {
 			return NewResult(fmt.Sprintf("%v", v)), nil
 		}
-		return NewResult(string(b)), nil
+		resStr := string(b)
+		if resStr == "" || resStr == "null" {
+			resStr = "[]"
+		}
+		return NewResult(resStr), nil
 	}
 }

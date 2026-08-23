@@ -38,6 +38,7 @@ type PluginManifest struct {
 	Channels     []ChannelInfo    `json:"channels,omitempty"`
 	Connectors   []ConnectorInfo  `json:"connectors,omitempty"`
 	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
+	Config       map[string]any   `json:"config,omitempty"`
 }
 
 // Permissions declares the sandbox access boundaries requested by the plugin.
@@ -53,6 +54,7 @@ type ToolInfo struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Category    string          `json:"category,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
 	Schema      json.RawMessage `json:"schema,omitempty"`
 }
 
@@ -93,8 +95,12 @@ func NewResultData(content string, data map[string]any) *ToolResult {
 
 // NewResultError creates a failed ToolResult with an error message.
 func NewResultError(errMessage string) *ToolResult {
+	if errMessage == "" {
+		errMessage = "unknown error"
+	}
 	return &ToolResult{
-		Error: errMessage,
+		Content: "Error: " + errMessage,
+		Error:   errMessage,
 	}
 }
 

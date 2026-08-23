@@ -39,7 +39,7 @@
       "name": "connector_figma_get_file",
       "description": "Retrieve Figma design file metadata and node tree",
       "category": "figma",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["file_key"],
         "properties": {
@@ -58,7 +58,7 @@
       "name": "connector_figma_get_comments",
       "description": "Get design comments and discussion threads from a Figma file",
       "category": "figma",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["file_key"],
         "properties": {
@@ -73,7 +73,7 @@
       "name": "connector_figma_post_comment",
       "description": "Post a design comment or feedback on a Figma file",
       "category": "figma",
-      "schema": {
+      "parameters": {
         "type": "object",
         "required": ["file_key", "message"],
         "properties": {
