@@ -20,6 +20,20 @@
       "actions": ["get_file", "get_comments", "post_comment"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["figma_access_token"],
+    "properties": {
+      "figma_access_token": {
+        "type": "string",
+        "title": "Figma Personal Access Token",
+        "description": "Personal Access Token generated from Figma Account Settings",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "figd_..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_figma_get_file",

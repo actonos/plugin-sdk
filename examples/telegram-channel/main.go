@@ -38,9 +38,17 @@ func (c *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 
 	ctx.Log().Info("Dispatching outbound message via Telegram Bot", "recipient", msg.Recipient)
 
+	chatID := msg.Metadata["chat_id"]
+	if chatID == "" {
+		chatID = msg.Recipient
+	}
+	if chatID == "" {
+		return fmt.Errorf("recipient or chat_id is required")
+	}
+
 	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 	payload := map[string]any{
-		"chat_id":    msg.Recipient,
+		"chat_id":    chatID,
 		"text":       msg.Content,
 		"parse_mode": "Markdown",
 	}

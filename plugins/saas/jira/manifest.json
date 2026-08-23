@@ -20,6 +20,26 @@
       "actions": ["search_issues_jql", "create_issue", "transition_issue"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["jira_api_token", "jira_cloud_id"],
+    "properties": {
+      "jira_cloud_id": {
+        "type": "string",
+        "title": "Jira Cloud ID",
+        "description": "Atlassian Cloud Site ID (UUID)",
+        "x-ui-placeholder": "e.g. 11223344-5566-7788-99aa-bbccddeeff00"
+      },
+      "jira_api_token": {
+        "type": "string",
+        "title": "Jira API Token / OAuth Token",
+        "description": "Atlassian API Token generated from Account Security settings",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "ATATT3xF..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_jira_search_issues_jql",

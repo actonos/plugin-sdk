@@ -7,6 +7,12 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
+type ZaloConfig struct {
+	AppID         string `json:"app_id"`
+	OAAccessToken string `json:"oa_access_token,omitempty"`
+	DefaultAgent  string `json:"default_agent"`
+}
+
 type ZaloChannel struct {
 	sdk.BaseChannel
 }
@@ -71,6 +77,9 @@ func (z *ZaloChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) erro
 }
 
 func (z *ZaloChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
+	var cfg ZaloConfig
+	_ = ctx.Config().Bind(&cfg)
+
 	rawQueue, ok, _ := ctx.Storage().Get("pending_zalo_webhook")
 	if !ok || rawQueue == "" {
 		return nil, nil
@@ -87,13 +96,19 @@ func (z *ZaloChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error
 	var inboundMsgs []sdk.InboundMessage
 	for _, ev := range events {
 		if ev.EventName == "user_send_text" && ev.Message.Text != "" {
+			targetAgent, cleanText := sdk.ExtractAgentMention(ev.Message.Text)
+			if targetAgent == "" && cfg.DefaultAgent != "" {
+				targetAgent = cfg.DefaultAgent
+			}
+
 			inbound := sdk.NewInboundMessage(
 				"zalo",
 				"default",
 				ev.Sender.ID,
 				"ZaloUser_"+ev.Sender.ID,
-				ev.Message.Text,
+				cleanText,
 			)
+			inbound.TargetAgent = targetAgent
 			inbound.Metadata["msg_id"] = ev.Message.MsgID
 			inbound.Metadata["oa_id"] = ev.Recipient.ID
 

@@ -7,6 +7,12 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
+type WhatsAppConfig struct {
+	PhoneNumberID string `json:"phone_number_id"`
+	AccessToken   string `json:"access_token,omitempty"`
+	DefaultAgent  string `json:"default_agent"`
+}
+
 type WhatsAppChannel struct {
 	sdk.BaseChannel
 }
@@ -39,19 +45,32 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 		return fmt.Errorf("missing whatsapp_access_token in vault: %w", err)
 	}
 
-	phoneID, err := ctx.Vault().GetSecret("whatsapp_phone_number_id")
-	if err != nil || phoneID == "" {
-		phoneID = msg.Metadata["phone_number_id"]
+	phoneID := msg.Metadata["phone_number_id"]
+	if phoneID == "" {
+		phoneID, _ = ctx.Vault().GetSecret("whatsapp_phone_number_id")
 	}
 	if phoneID == "" {
-		return fmt.Errorf("missing whatsapp_phone_number_id in vault/metadata")
+		var cfg WhatsAppConfig
+		_ = ctx.Config().Bind(&cfg)
+		phoneID = cfg.PhoneNumberID
+	}
+	if phoneID == "" {
+		return fmt.Errorf("missing whatsapp_phone_number_id in vault/metadata/config")
+	}
+
+	recipient := msg.Recipient
+	if recipient == "" {
+		recipient = msg.Metadata["to"]
+	}
+	if recipient == "" {
+		return fmt.Errorf("recipient phone number is required")
 	}
 
 	reqURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/messages", phoneID)
 	payload := map[string]any{
 		"messaging_product": "whatsapp",
 		"recipient_type":    "individual",
-		"to":                msg.Recipient,
+		"to":                recipient,
 		"type":              "text",
 		"text": map[string]string{
 			"body": msg.Content,
@@ -67,13 +86,16 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 	}
 
 	_ = ctx.EventBus().Emit("channel.whatsapp.sent", map[string]string{
-		"recipient": msg.Recipient,
+		"recipient": recipient,
 		"status":    "sent",
 	})
 	return nil
 }
 
 func (w *WhatsAppChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
+	var cfg WhatsAppConfig
+	_ = ctx.Config().Bind(&cfg)
+
 	// Read pending webhook queue stored in KV storage buffer
 	rawQueue, ok, _ := ctx.Storage().Get("pending_webhook_queue")
 	if !ok || rawQueue == "" {
@@ -100,19 +122,28 @@ func (w *WhatsAppChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 				if m.Text.Body == "" {
 					continue
 				}
-				senderName := contactsMap[m.From]
-				if senderName == "" {
-					senderName = m.From
+
+				name := contactsMap[m.From]
+				if name == "" {
+					name = "WhatsAppUser_" + m.From
+				}
+
+				targetAgent, cleanText := sdk.ExtractAgentMention(m.Text.Body)
+				if targetAgent == "" && cfg.DefaultAgent != "" {
+					targetAgent = cfg.DefaultAgent
 				}
 
 				inbound := sdk.NewInboundMessage(
 					"whatsapp",
 					"default",
 					m.From,
-					senderName,
-					m.Text.Body,
+					name,
+					cleanText,
 				)
+				inbound.TargetAgent = targetAgent
 				inbound.Metadata["message_id"] = m.ID
+				inbound.Metadata["from"] = m.From
+
 				inboundMsgs = append(inboundMsgs, inbound)
 				_ = ctx.EventBus().Emit("channel.whatsapp.received", inbound)
 			}

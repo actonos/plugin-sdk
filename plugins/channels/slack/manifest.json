@@ -1,14 +1,14 @@
 {
   "id": "channel-slack",
   "name": "Slack Bot Channel",
-  "version": "1.0.0",
-  "description": "Slack integration for ActonOS AI agents with Block Kit formatting, thread replies, and multi-agent routing",
+  "version": "2.0.0",
+  "description": "Slack integration for ActonOS AI agents with Block Kit formatting, multi-account routing, and thread replies",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["channel"],
   "permissions": {
     "net_outbound": ["slack.com"],
-    "secrets": ["slack_bot_token"],
+    "secrets": ["slack_bot_token", "slack_bot_tokens.*"],
     "storage": true,
     "bus_events": ["channel.slack.received", "channel.slack.sent"]
   },
@@ -18,5 +18,66 @@
       "display_name": "Slack Bot",
       "requires_pairing": true
     }
-  ]
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "poll_interval_seconds": {
+        "type": "integer",
+        "title": "Polling Interval (seconds)",
+        "description": "Delay in seconds between Slack conversations.history polling cycles",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 60,
+        "x-ui-group": "General Settings"
+      },
+      "accounts": {
+        "type": "array",
+        "title": "Slack Workspace Accounts",
+        "description": "Configure one or multiple Slack Bot integrations",
+        "minItems": 1,
+        "x-ui-group": "Slack Accounts",
+        "items": {
+          "type": "object",
+          "required": ["account_id", "bot_token", "default_agent"],
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "title": "Account ID",
+              "description": "Unique identifier for this Slack bot instance",
+              "pattern": "^[a-z0-9_-]+$",
+              "x-ui-placeholder": "e.g. dev_slack or support_slack"
+            },
+            "display_name": {
+              "type": "string",
+              "title": "Display Name",
+              "description": "Friendly label for this Slack account",
+              "x-ui-placeholder": "Core Team Slack"
+            },
+            "bot_token": {
+              "type": "string",
+              "title": "Slack Bot User OAuth Token",
+              "description": "Bot token starting with xoxb- from Slack App Dashboard",
+              "x-secret": true,
+              "x-ui-widget": "password",
+              "x-ui-placeholder": "xoxb-1234567890-..."
+            },
+            "default_agent": {
+              "type": "string",
+              "title": "Default Target Agent",
+              "description": "Default ActonOS agent to route incoming messages when no @mention is present",
+              "x-ui-widget": "agent-selector",
+              "x-ui-placeholder": "agent-dev"
+            },
+            "listen_channel_id": {
+              "type": "string",
+              "title": "Listen Channel ID",
+              "description": "Channel ID to monitor (e.g. C0123456789)",
+              "x-ui-placeholder": "C0123456789"
+            }
+          }
+        }
+      }
+    }
+  }
 }

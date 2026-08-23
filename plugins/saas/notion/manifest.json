@@ -20,6 +20,20 @@
       "actions": ["search_pages", "create_page", "query_database", "append_block_children"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["notion_api_key"],
+    "properties": {
+      "notion_api_key": {
+        "type": "string",
+        "title": "Notion Internal Integration Secret",
+        "description": "Internal Integration Token starting with secret_ from notion.so/my-integrations",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "secret_..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_notion_search_pages",

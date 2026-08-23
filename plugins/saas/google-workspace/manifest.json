@@ -20,6 +20,20 @@
       "actions": ["send_email", "create_calendar_event", "list_drive_files", "get_doc_content"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["google_workspace_access_token"],
+    "properties": {
+      "google_workspace_access_token": {
+        "type": "string",
+        "title": "Google OAuth2 Access Token",
+        "description": "OAuth2 Token with Gmail, Calendar, Drive, and Docs API scopes",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "ya29..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_google-workspace_send_email",

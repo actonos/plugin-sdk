@@ -20,6 +20,20 @@
       "actions": ["list_issues", "create_issue", "update_issue_status"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["linear_api_key"],
+    "properties": {
+      "linear_api_key": {
+        "type": "string",
+        "title": "Linear API Key",
+        "description": "Personal API Key generated from Linear Settings > Account > Security",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "lin_api_..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_linear_list_issues",

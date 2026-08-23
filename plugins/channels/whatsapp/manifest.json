@@ -1,14 +1,14 @@
 {
   "id": "channel-whatsapp",
   "name": "WhatsApp Cloud Channel",
-  "version": "1.0.0",
-  "description": "WhatsApp Business Cloud API integration for ActonOS AI agents with text and template messaging",
+  "version": "2.0.0",
+  "description": "WhatsApp Business Cloud API integration for ActonOS AI agents with text, template messaging, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["channel"],
   "permissions": {
     "net_outbound": ["graph.facebook.com"],
-    "secrets": ["whatsapp_access_token", "whatsapp_phone_number_id"],
+    "secrets": ["whatsapp_access_token", "whatsapp_phone_number_id", "whatsapp_tokens.*"],
     "storage": true,
     "bus_events": ["channel.whatsapp.received", "channel.whatsapp.sent"]
   },
@@ -18,5 +18,31 @@
       "display_name": "WhatsApp Cloud",
       "requires_pairing": true
     }
-  ]
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "phone_number_id": {
+        "type": "string",
+        "title": "Default Phone Number ID",
+        "description": "WhatsApp Cloud API Phone Number ID from Meta Developer Console",
+        "x-ui-placeholder": "100609... "
+      },
+      "access_token": {
+        "type": "string",
+        "title": "System User Access Token",
+        "description": "Meta Graph API Permanent Access Token with whatsapp_business_messaging permission",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "EAAG..."
+      },
+      "default_agent": {
+        "type": "string",
+        "title": "Default Target Agent",
+        "description": "Default ActonOS agent to handle incoming WhatsApp messages",
+        "x-ui-widget": "agent-selector",
+        "x-ui-placeholder": "agent-support"
+      }
+    }
+  }
 }

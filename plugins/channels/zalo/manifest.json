@@ -1,14 +1,14 @@
 {
   "id": "channel-zalo",
   "name": "Zalo OA Channel",
-  "version": "1.0.0",
-  "description": "Zalo Official Account OpenAPI integration for ActonOS AI agents for Vietnamese users",
+  "version": "2.0.0",
+  "description": "Zalo Official Account OpenAPI integration for ActonOS AI agents with rich text and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["channel"],
   "permissions": {
     "net_outbound": ["openapi.zalo.me"],
-    "secrets": ["zalo_oa_access_token"],
+    "secrets": ["zalo_oa_access_token", "zalo_tokens.*"],
     "storage": true,
     "bus_events": ["channel.zalo.received", "channel.zalo.sent"]
   },
@@ -18,5 +18,31 @@
       "display_name": "Zalo Official Account",
       "requires_pairing": true
     }
-  ]
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "app_id": {
+        "type": "string",
+        "title": "Zalo App ID",
+        "description": "Zalo Developer App ID",
+        "x-ui-placeholder": "1234567890..."
+      },
+      "oa_access_token": {
+        "type": "string",
+        "title": "Official Account Access Token",
+        "description": "Zalo OpenAPI OA Access Token",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "Bearer token..."
+      },
+      "default_agent": {
+        "type": "string",
+        "title": "Default Target Agent",
+        "description": "Default ActonOS agent to dispatch incoming messages",
+        "x-ui-widget": "agent-selector",
+        "x-ui-placeholder": "agent-support"
+      }
+    }
+  }
 }

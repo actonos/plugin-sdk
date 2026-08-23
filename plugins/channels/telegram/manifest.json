@@ -1,14 +1,14 @@
 {
   "id": "channel-telegram",
   "name": "Telegram Bot Channel",
-  "version": "1.0.0",
-  "description": "Telegram Bot integration for ActonOS AI agents with MarkdownV2, inline buttons, and multi-agent routing",
+  "version": "2.0.0",
+  "description": "Telegram Bot integration for ActonOS AI agents with MarkdownV2, multi-bot accounts, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["channel"],
   "permissions": {
     "net_outbound": ["api.telegram.org"],
-    "secrets": ["telegram_bot_token"],
+    "secrets": ["telegram_bot_token", "telegram_bot_tokens.*"],
     "storage": true,
     "bus_events": ["channel.telegram.received", "channel.telegram.sent"]
   },
@@ -22,10 +22,55 @@
   "config_schema": {
     "type": "object",
     "properties": {
-      "poll_interval_sec": {
+      "poll_interval_seconds": {
         "type": "integer",
-        "description": "Long polling interval in seconds",
-        "default": 30
+        "title": "Polling Interval (seconds)",
+        "description": "Delay in seconds between Telegram getUpdates polling cycles",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 60,
+        "x-ui-group": "General Settings"
+      },
+      "accounts": {
+        "type": "array",
+        "title": "Telegram Bot Accounts",
+        "description": "Configure one or multiple Telegram bot instances",
+        "minItems": 1,
+        "x-ui-group": "Bot Accounts",
+        "items": {
+          "type": "object",
+          "required": ["account_id", "bot_token", "default_agent"],
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "title": "Account ID",
+              "description": "Unique identifier for this bot instance",
+              "pattern": "^[a-z0-9_-]+$",
+              "x-ui-placeholder": "e.g. support_bot or devops_bot"
+            },
+            "display_name": {
+              "type": "string",
+              "title": "Display Name",
+              "description": "Friendly label for this bot account",
+              "x-ui-placeholder": "Customer Support Bot"
+            },
+            "bot_token": {
+              "type": "string",
+              "title": "Telegram Bot Token",
+              "description": "Bot Token from @BotFather",
+              "x-secret": true,
+              "x-ui-widget": "password",
+              "x-ui-placeholder": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+            },
+            "default_agent": {
+              "type": "string",
+              "title": "Default Target Agent",
+              "description": "Default ActonOS agent to dispatch incoming messages when no @mention is present",
+              "x-ui-widget": "agent-selector",
+              "x-ui-placeholder": "agent-support"
+            }
+          }
+        }
       }
     }
   }

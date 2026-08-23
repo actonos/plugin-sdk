@@ -20,6 +20,20 @@
       "actions": ["list_repos", "get_issue", "create_issue", "create_pull_request", "search_code"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["github_access_token"],
+    "properties": {
+      "github_access_token": {
+        "type": "string",
+        "title": "GitHub Personal Access Token / OAuth Token",
+        "description": "Token with repo, read:org, and workflow scopes",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "ghp_..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_github_list_repos",

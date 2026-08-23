@@ -20,6 +20,20 @@
       "actions": ["post_message", "list_channels", "get_history"]
     }
   ],
+  "config_schema": {
+    "type": "object",
+    "required": ["slack_bot_token"],
+    "properties": {
+      "slack_bot_token": {
+        "type": "string",
+        "title": "Slack Bot User OAuth Token",
+        "description": "OAuth token starting with xoxb- with chat:write, channels:read scopes",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "xoxb-..."
+      }
+    }
+  },
   "tools": [
     {
       "name": "connector_slack_post_message",
