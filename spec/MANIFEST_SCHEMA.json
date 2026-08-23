@@ -107,7 +107,37 @@
     },
     "config_schema": {
       "type": "object",
-      "description": "JSON schema for user-configurable settings"
+      "description": "JSON Schema (Draft-07 compliant) for user-configurable plugin settings, with support for UI widgets, groupings, and vault secret flags",
+      "properties": {
+        "type": { "type": "string", "enum": ["object"] },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["string", "integer", "number", "boolean", "array", "object"] },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "default": {},
+              "minimum": { "type": "number" },
+              "maximum": { "type": "number" },
+              "enum": { "type": "array" },
+              "items": { "type": "object" },
+              "properties": { "type": "object" },
+              "required": { "type": "array", "items": { "type": "string" } },
+              "x-secret": { "type": "boolean", "description": "Flag indicating that this value must be securely stored in Hardware Vault" },
+              "x-ui-widget": { "type": "string", "description": "Custom UI component hint (e.g. password, agent-selector, textarea, code, slider)" },
+              "x-ui-group": { "type": "string", "description": "Form section group title" },
+              "x-ui-placeholder": { "type": "string", "description": "Placeholder text for the UI input" },
+              "x-order": { "type": "integer", "description": "Rendering order priority in UI" }
+            }
+          }
+        }
+      }
     }
   }
 }

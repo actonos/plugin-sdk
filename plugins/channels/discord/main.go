@@ -7,6 +7,22 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
+// DiscordConfig defines the root configuration model for the Discord channel plugin.
+type DiscordConfig struct {
+	PollIntervalSeconds int              `json:"poll_interval_seconds"`
+	Accounts            []DiscordAccount `json:"accounts"`
+}
+
+// DiscordAccount represents an individual configured Discord bot instance.
+type DiscordAccount struct {
+	AccountID       string `json:"account_id"`
+	DisplayName     string `json:"display_name"`
+	BotToken        string `json:"bot_token,omitempty"`
+	DefaultAgent    string `json:"default_agent"`
+	ListenChannelID string `json:"listen_channel_id"`
+	EnableEmbeds    bool   `json:"enable_embeds"`
+}
+
 type DiscordChannel struct {
 	sdk.BaseChannel
 }
@@ -23,9 +39,17 @@ type DiscordMessage struct {
 }
 
 func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
-	token, err := ctx.Vault().GetSecret("discord_bot_token")
-	if err != nil || token == "" {
-		return fmt.Errorf("missing discord_bot_token in vault: %w", err)
+	accountID := msg.AccountID
+	if accountID == "" {
+		accountID = msg.Metadata["account_id"]
+	}
+	if accountID == "" {
+		accountID = "default"
+	}
+
+	token, err := getBotToken(ctx, accountID)
+	if err != nil {
+		return err
 	}
 
 	channelID := msg.Recipient
@@ -63,6 +87,7 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 	}
 
 	_ = ctx.EventBus().Emit("channel.discord.sent", map[string]string{
+		"account_id": accountID,
 		"channel_id": channelID,
 		"status":     "sent",
 	})
@@ -70,17 +95,52 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 }
 
 func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
-	token, err := ctx.Vault().GetSecret("discord_bot_token")
-	if err != nil || token == "" {
-		return nil, fmt.Errorf("missing discord_bot_token in vault: %w", err)
+	var cfg DiscordConfig
+	_ = ctx.Config().Bind(&cfg)
+
+	// Fallback to default account if no accounts are explicitly defined
+	accounts := cfg.Accounts
+	if len(accounts) == 0 {
+		accounts = []DiscordAccount{
+			{
+				AccountID:       "default",
+				DisplayName:     "Default Discord Bot",
+				ListenChannelID: "default",
+				EnableEmbeds:    true,
+			},
+		}
 	}
 
-	listenChannelID, ok, _ := ctx.Storage().Get("listen_channel_id")
-	if !ok || listenChannelID == "" {
+	var allInbound []sdk.InboundMessage
+
+	for _, acc := range accounts {
+		token, err := getBotToken(ctx, acc.AccountID)
+		if err != nil || token == "" {
+			ctx.Log().Warn("Skipping Discord account due to missing token", "account_id", acc.AccountID, "err", err)
+			continue
+		}
+
+		msgs, err := d.pollAccountMessages(ctx, token, acc)
+		if err != nil {
+			ctx.Log().Error("Failed polling messages for Discord account", "account_id", acc.AccountID, "err", err)
+			continue
+		}
+
+		allInbound = append(allInbound, msgs...)
+	}
+
+	return allInbound, nil
+}
+
+func (d *DiscordChannel) pollAccountMessages(ctx sdk.Context, token string, acc DiscordAccount) ([]sdk.InboundMessage, error) {
+	listenChannelID := acc.ListenChannelID
+	if listenChannelID == "" {
 		listenChannelID = "default"
 	}
 
-	lastMsgID, _, _ := ctx.Storage().Get("last_msg_id_" + listenChannelID)
+	storageKey := fmt.Sprintf("last_msg_id_%s_%s", acc.AccountID, listenChannelID)
+	lastMsgID, _, _ := ctx.Storage().Get(storageKey)
+
 	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages?limit=10", listenChannelID)
 	if lastMsgID != "" {
 		reqURL += "&after=" + lastMsgID
@@ -109,23 +169,48 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 		cleanContent := cleanDiscordMentions(msg.Content)
 		inbound := sdk.NewInboundMessage(
 			"discord",
-			"default",
+			acc.AccountID,
 			msg.Author.ID,
 			msg.Author.Username,
 			cleanContent,
 		)
 		inbound.Metadata["channel_id"] = msg.ChannelID
 		inbound.Metadata["message_id"] = msg.ID
+		inbound.Metadata["account_id"] = acc.AccountID
+
+		// If no explicit @agent mention was found in text, fallback to account's DefaultAgent
+		if inbound.TargetAgent == "" && acc.DefaultAgent != "" {
+			inbound.TargetAgent = acc.DefaultAgent
+		}
 
 		inboundMsgs = append(inboundMsgs, inbound)
 		_ = ctx.EventBus().Emit("channel.discord.received", inbound)
 	}
 
 	if newestID != lastMsgID && newestID != "" {
-		_ = ctx.Storage().Set("last_msg_id_"+listenChannelID, newestID)
+		_ = ctx.Storage().Set(storageKey, newestID)
 	}
 
 	return inboundMsgs, nil
+}
+
+func getBotToken(ctx sdk.Context, accountID string) (string, error) {
+	// 1. Try account-specific scoped vault keys
+	if accountID != "" && accountID != "default" {
+		if token, err := ctx.Vault().GetSecret("discord_bot_tokens." + accountID); err == nil && token != "" {
+			return token, nil
+		}
+		if token, err := ctx.Vault().GetSecret("discord_bot_token_" + accountID); err == nil && token != "" {
+			return token, nil
+		}
+	}
+
+	// 2. Fallback to default vault secret
+	token, err := ctx.Vault().GetSecret("discord_bot_token")
+	if err != nil || token == "" {
+		return "", fmt.Errorf("missing discord bot token for account %q in vault", accountID)
+	}
+	return token, nil
 }
 
 func cleanDiscordMentions(content string) string {
@@ -146,7 +231,7 @@ func init() {
 	ch := &DiscordChannel{
 		BaseChannel: sdk.BaseChannel{
 			ChannelName:        "discord",
-			ChannelDisplayName: "Discord Bot",
+			ChannelDisplayName: "Discord Bot Gateway",
 			PairingRequired:    true,
 		},
 	}

@@ -86,6 +86,26 @@ func (r *PluginRunner) Init() error {
 	return nil
 }
 
+// SetPluginConfig stores structured configuration into the runner's isolated storage (__config).
+func (r *PluginRunner) SetPluginConfig(cfg any) error {
+	var configJSON string
+	switch c := cfg.(type) {
+	case string:
+		configJSON = c
+	case []byte:
+		configJSON = string(c)
+	default:
+		b, err := json.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("serializing plugin config: %w", err)
+		}
+		configJSON = string(b)
+	}
+
+	r.host.SetStorage("__config", configJSON)
+	return nil
+}
+
 // ExecuteTool invokes the exported acton_tool_execute with the given tool name and input JSON.
 func (r *PluginRunner) ExecuteTool(toolName string, inputJSON []byte) (*sdk.ToolResult, error) {
 	execFunc := r.mod.ExportedFunction("acton_tool_execute")
@@ -308,3 +328,4 @@ func (r *PluginRunner) free(ptr uint32, length uint32) {
 		_, _ = freeFunc.Call(r.ctx, uint64(ptr), uint64(length))
 	}
 }
+

@@ -11,6 +11,7 @@ Every plugin handler receives a `Context` interface providing safe access to hos
 
 | Method | Return Type | Description |
 |:---|:---|:---|
+| `ctx.Config()` | `ConfigStore` | Typed access to user-configured plugin settings defined via `config_schema`. |
 | `ctx.HTTP()` | `HTTPClient` | Outbound HTTP requests filtered by manifest domain egress whitelist. |
 | `ctx.Vault()` | `VaultClient` | Retrieve authorized tokens and credentials from the Hardware Vault. |
 | `ctx.Storage()` | `KVStorage` | Persistent SQLite key-value partition unique to this plugin. |
@@ -99,3 +100,83 @@ func init() {
     }
 }
 ```
+
+---
+
+## 5. Dynamic Configuration & Multi-Account Patterns (`config_schema`)
+
+Plugins can declare a flexible, schema-driven settings configuration in their `manifest.json`. ActonOS Web UI reads this schema to automatically render configuration forms without writing custom frontend code.
+
+### 5.1. Declaring `config_schema` in `manifest.json`
+
+```json
+{
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "poll_interval_seconds": {
+        "type": "integer",
+        "title": "Polling Interval (seconds)",
+        "default": 3,
+        "x-ui-group": "General Settings"
+      },
+      "accounts": {
+        "type": "array",
+        "title": "Bot Accounts",
+        "x-ui-group": "Bot Accounts",
+        "items": {
+          "type": "object",
+          "required": ["account_id", "bot_token", "default_agent"],
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "title": "Account ID",
+              "x-ui-placeholder": "bot_support"
+            },
+            "bot_token": {
+              "type": "string",
+              "title": "Bot Token",
+              "x-secret": true,
+              "x-ui-widget": "password"
+            },
+            "default_agent": {
+              "type": "string",
+              "title": "Default Agent",
+              "x-ui-widget": "agent-selector"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### 5.2. Reading Configuration in Plugin Code
+
+```go
+type MyPluginConfig struct {
+    PollIntervalSeconds int              `json:"poll_interval_seconds"`
+    Accounts            []AccountConfig  `json:"accounts"`
+}
+
+type AccountConfig struct {
+    AccountID    string `json:"account_id"`
+    DefaultAgent string `json:"default_agent"`
+}
+
+func (c *MyChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
+    var cfg MyPluginConfig
+    if err := ctx.Config().Bind(&cfg); err != nil {
+        return nil, err
+    }
+
+    for _, acc := range cfg.Accounts {
+        // Retrieve secret token saved in Hardware Vault by ActonOS
+        token, _ := ctx.Vault().GetSecret("discord_bot_tokens." + acc.AccountID)
+        // Poll for this account...
+    }
+    // ...
+}
+```
+

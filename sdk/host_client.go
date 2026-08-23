@@ -10,6 +10,7 @@ import (
 
 type defaultContext struct {
 	http     HTTPClient
+	config   ConfigStore
 	vault    VaultClient
 	storage  KVStorage
 	eventBus EventBus
@@ -18,20 +19,23 @@ type defaultContext struct {
 
 // NewContext creates a default Context connected to Host ABI syscalls.
 func NewContext() Context {
+	storage := &defaultKVStorage{}
 	return &defaultContext{
 		http:     &defaultHTTPClient{},
+		config:   &defaultConfigStore{storage: storage},
 		vault:    &defaultVaultClient{},
-		storage:  &defaultKVStorage{},
+		storage:  storage,
 		eventBus: &defaultEventBus{},
 		logger:   &defaultLogger{},
 	}
 }
 
-func (c *defaultContext) HTTP() HTTPClient   { return c.http }
-func (c *defaultContext) Vault() VaultClient { return c.vault }
-func (c *defaultContext) Storage() KVStorage { return c.storage }
-func (c *defaultContext) EventBus() EventBus { return c.eventBus }
-func (c *defaultContext) Log() Logger        { return c.logger }
+func (c *defaultContext) HTTP() HTTPClient     { return c.http }
+func (c *defaultContext) Config() ConfigStore   { return c.config }
+func (c *defaultContext) Vault() VaultClient   { return c.vault }
+func (c *defaultContext) Storage() KVStorage   { return c.storage }
+func (c *defaultContext) EventBus() EventBus   { return c.eventBus }
+func (c *defaultContext) Log() Logger          { return c.logger }
 
 // --- HTTP Client Implementation ---
 
@@ -161,6 +165,79 @@ func (h *defaultHTTPClient) Do(req HTTPRequest) (*HTTPResponse, error) {
 		return nil, fmt.Errorf("parsing http response JSON: %w (raw: %s)", err, string(resBytes))
 	}
 	return &resp, nil
+}
+
+// --- Config Store Implementation ---
+
+type defaultConfigStore struct {
+	storage KVStorage
+}
+
+func (c *defaultConfigStore) Get(key string) (string, bool) {
+	var rawMap map[string]any
+	if ok, _ := c.storage.GetJSON("__config", &rawMap); ok && rawMap != nil {
+		if val, exists := rawMap[key]; exists {
+			return fmt.Sprintf("%v", val), true
+		}
+	}
+	val, ok, _ := c.storage.Get(key)
+	return val, ok
+}
+
+func (c *defaultConfigStore) GetString(key string, defaultVal string) string {
+	if val, ok := c.Get(key); ok && val != "" {
+		return val
+	}
+	return defaultVal
+}
+
+func (c *defaultConfigStore) GetInt(key string, defaultVal int) int {
+	if val, ok := c.Get(key); ok {
+		var n int
+		if _, err := fmt.Sscanf(val, "%d", &n); err == nil {
+			return n
+		}
+	}
+	return defaultVal
+}
+
+func (c *defaultConfigStore) GetBool(key string, defaultVal bool) bool {
+	if val, ok := c.Get(key); ok {
+		lower := strings.ToLower(strings.TrimSpace(val))
+		if lower == "true" || lower == "1" || lower == "yes" {
+			return true
+		}
+		if lower == "false" || lower == "0" || lower == "no" {
+			return false
+		}
+	}
+	return defaultVal
+}
+
+func (c *defaultConfigStore) GetJSON(key string, target any) (bool, error) {
+	var rawMap map[string]json.RawMessage
+	if ok, err := c.storage.GetJSON("__config", &rawMap); ok && rawMap != nil {
+		if rawVal, exists := rawMap[key]; exists {
+			if err := json.Unmarshal(rawVal, target); err != nil {
+				return true, err
+			}
+			return true, nil
+		}
+	} else if err != nil {
+		return false, err
+	}
+	return c.storage.GetJSON(key, target)
+}
+
+func (c *defaultConfigStore) Bind(target any) error {
+	raw, ok, err := c.storage.Get("__config")
+	if err != nil {
+		return fmt.Errorf("reading plugin config: %w", err)
+	}
+	if !ok || raw == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(raw), target)
 }
 
 // --- Vault Client Implementation ---

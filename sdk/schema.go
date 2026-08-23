@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 )
@@ -19,6 +20,16 @@ func GenerateSchema(v any) json.RawMessage {
 
 	if t.Kind() != reflect.Struct {
 		return json.RawMessage(`{"type":"object","properties":{}}`)
+	}
+
+	schemaMap := structToSchema(t)
+	b, _ := json.Marshal(schemaMap)
+	return json.RawMessage(b)
+}
+
+func structToSchema(t reflect.Type) map[string]any {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
 	}
 
 	schemaMap := map[string]any{
@@ -48,24 +59,9 @@ func GenerateSchema(v any) json.RawMessage {
 			}
 		}
 
-		fieldSchema := typeToSchema(field.Type)
-
-		// Parse `jsonschema` tag options e.g. `jsonschema:"description=City name,required"`
-		jsTag := field.Tag.Get("jsonschema")
-		if jsTag != "" {
-			options := strings.Split(jsTag, ",")
-			for _, opt := range options {
-				opt = strings.TrimSpace(opt)
-				if opt == "required" {
-					requiredFields = append(requiredFields, fieldName)
-				} else if strings.HasPrefix(opt, "description=") {
-					desc := strings.TrimPrefix(opt, "description=")
-					fieldSchema["description"] = desc
-				} else if strings.HasPrefix(opt, "enum=") {
-					enumVals := strings.Split(strings.TrimPrefix(opt, "enum="), "|")
-					fieldSchema["enum"] = enumVals
-				}
-			}
+		fieldSchema, isRequired := parseFieldSchema(field)
+		if isRequired {
+			requiredFields = append(requiredFields, fieldName)
 		}
 
 		properties[fieldName] = fieldSchema
@@ -75,8 +71,46 @@ func GenerateSchema(v any) json.RawMessage {
 		schemaMap["required"] = requiredFields
 	}
 
-	b, _ := json.Marshal(schemaMap)
-	return json.RawMessage(b)
+	return schemaMap
+}
+
+func parseFieldSchema(field reflect.StructField) (map[string]any, bool) {
+	fieldSchema := typeToSchema(field.Type)
+	var isRequired bool
+
+	// Parse `jsonschema` tag options e.g. `jsonschema:"title=Bot Token,secret,widget=password,required"`
+	jsTag := field.Tag.Get("jsonschema")
+	if jsTag != "" {
+		options := strings.Split(jsTag, ",")
+		for _, opt := range options {
+			opt = strings.TrimSpace(opt)
+			if opt == "required" {
+				isRequired = true
+			} else if opt == "secret" || opt == "secret=true" {
+				fieldSchema["x-secret"] = true
+			} else if strings.HasPrefix(opt, "title=") {
+				fieldSchema["title"] = strings.TrimPrefix(opt, "title=")
+			} else if strings.HasPrefix(opt, "description=") {
+				fieldSchema["description"] = strings.TrimPrefix(opt, "description=")
+			} else if strings.HasPrefix(opt, "widget=") {
+				fieldSchema["x-ui-widget"] = strings.TrimPrefix(opt, "widget=")
+			} else if strings.HasPrefix(opt, "group=") {
+				fieldSchema["x-ui-group"] = strings.TrimPrefix(opt, "group=")
+			} else if strings.HasPrefix(opt, "placeholder=") {
+				fieldSchema["x-ui-placeholder"] = strings.TrimPrefix(opt, "placeholder=")
+			} else if strings.HasPrefix(opt, "order=") {
+				var order int
+				if _, err := fmt.Sscanf(strings.TrimPrefix(opt, "order="), "%d", &order); err == nil {
+					fieldSchema["x-order"] = order
+				}
+			} else if strings.HasPrefix(opt, "enum=") {
+				enumVals := strings.Split(strings.TrimPrefix(opt, "enum="), "|")
+				fieldSchema["enum"] = enumVals
+			}
+		}
+	}
+
+	return fieldSchema, isRequired
 }
 
 func typeToSchema(t reflect.Type) map[string]any {
@@ -106,27 +140,9 @@ func typeToSchema(t reflect.Type) map[string]any {
 	case reflect.Map:
 		schema["type"] = "object"
 	case reflect.Interface:
-		// Generic any / object
 		schema["type"] = "object"
 	case reflect.Struct:
-		schema["type"] = "object"
-		subProps := make(map[string]any)
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
-			if !f.IsExported() {
-				continue
-			}
-			fName := f.Name
-			jTag := f.Tag.Get("json")
-			if jTag != "" && jTag != "-" {
-				parts := strings.Split(jTag, ",")
-				if parts[0] != "" {
-					fName = parts[0]
-				}
-			}
-			subProps[fName] = typeToSchema(f.Type)
-		}
-		schema["properties"] = subProps
+		return structToSchema(t)
 	default:
 		schema["type"] = "string"
 	}

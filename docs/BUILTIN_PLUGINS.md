@@ -9,7 +9,7 @@ This document lists all official, ready-to-deploy built-in plugins provided in t
 | Plugin Name | ID | Capabilities | Required Vault Secrets | Egress Whitelist | Features |
 |:---|:---|:---|:---|:---|:---|
 | **Telegram** | `channel-telegram` | `channel` | `telegram_bot_token` | `api.telegram.org` | MarkdownV2, Reply-to-threading, inline buttons, `@agent` routing, 6-digit PIN pairing |
-| **Discord** | `channel-discord` | `channel` | `discord_bot_token` | `discord.com` | Channel messages, rich embeds, `<@!id>` mention stripping, multi-agent dispatch |
+| **Discord** | `channel-discord` | `channel` | `discord_bot_tokens.*` | `discord.com` | Multi-Bot accounts, channel messages, rich embeds, `<@!id>` mention stripping, dynamic multi-agent dispatch |
 | **WhatsApp** | `channel-whatsapp` | `channel` | `whatsapp_access_token`, `whatsapp_phone_number_id` | `graph.facebook.com` | WhatsApp Cloud API, individual text & template messaging, webhook buffering |
 | **Slack** | `channel-slack` | `channel` | `slack_bot_token` | `slack.com` | `chat.postMessage`, thread replies (`thread_ts`), conversation history polling |
 | **Zalo OA** | `channel-zalo` | `channel` | `zalo_oa_access_token` | `openapi.zalo.me` | Zalo OpenAPI v3.0, customer support messaging, Vietnamese `@agent` syntax support |

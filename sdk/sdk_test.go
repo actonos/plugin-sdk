@@ -168,3 +168,132 @@ func TestContextStorageAndVault(t *testing.T) {
 		t.Errorf("expected secret, got empty string")
 	}
 }
+
+type BotAccountConfig struct {
+	AccountID    string `json:"account_id" jsonschema:"title=Account ID,placeholder=bot_support,required"`
+	BotToken     string `json:"bot_token" jsonschema:"title=Bot Token,secret,widget=password,required"`
+	DefaultAgent string `json:"default_agent" jsonschema:"title=Default Agent,widget=agent-selector"`
+	Embeds       bool   `json:"embeds" jsonschema:"title=Enable Embeds"`
+}
+
+type PluginAppConfig struct {
+	PollInterval int                `json:"poll_interval" jsonschema:"title=Poll Interval,group=General,order=1"`
+	Accounts     []BotAccountConfig `json:"accounts" jsonschema:"title=Bot Accounts,group=Accounts,order=2"`
+}
+
+func TestDynamicConfigSchemaGeneration(t *testing.T) {
+	var cfg PluginAppConfig
+	schemaJSON := sdk.GenerateSchema(cfg)
+
+	var schema map[string]any
+	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
+		t.Fatalf("failed to unmarshal generated schema: %v", err)
+	}
+
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected properties in schema")
+	}
+
+	pollProp, ok := props["poll_interval"].(map[string]any)
+	if !ok || pollProp["title"] != "Poll Interval" || pollProp["x-ui-group"] != "General" || pollProp["x-order"] != float64(1) {
+		t.Errorf("invalid poll_interval schema: %v", pollProp)
+	}
+
+	accountsProp, ok := props["accounts"].(map[string]any)
+	if !ok || accountsProp["type"] != "array" {
+		t.Fatalf("expected accounts to be array schema: %v", accountsProp)
+	}
+
+	items, ok := accountsProp["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected items in accounts schema: %v", accountsProp)
+	}
+
+	itemProps, ok := items["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected properties in items schema: %v", items)
+	}
+
+	tokenProp, ok := itemProps["bot_token"].(map[string]any)
+	if !ok || tokenProp["x-secret"] != true || tokenProp["x-ui-widget"] != "password" {
+		t.Errorf("expected bot_token to have x-secret:true and widget:password, got: %v", tokenProp)
+	}
+
+	agentProp, ok := itemProps["default_agent"].(map[string]any)
+	if !ok || agentProp["x-ui-widget"] != "agent-selector" {
+		t.Errorf("expected default_agent to have widget:agent-selector, got: %v", agentProp)
+	}
+}
+
+func TestConfigStoreBinding(t *testing.T) {
+	ctx := sdk.NewContext()
+
+	rawConfig := `{
+		"poll_interval": 5,
+		"accounts": [
+			{
+				"account_id": "bot_cskh",
+				"bot_token": "token_123",
+				"default_agent": "agent-support",
+				"embeds": true
+			},
+			{
+				"account_id": "bot_devops",
+				"bot_token": "token_456",
+				"default_agent": "agent-ops",
+				"embeds": false
+			}
+		]
+	}`
+
+	err := ctx.Storage().Set("__config", rawConfig)
+	if err != nil {
+		t.Fatalf("failed setting __config in storage: %v", err)
+	}
+
+	// Test GetInt, GetString
+	if ctx.Config().GetInt("poll_interval", 1) != 5 {
+		t.Errorf("expected poll_interval=5, got %d", ctx.Config().GetInt("poll_interval", 1))
+	}
+
+	// Test Bind
+	var boundCfg PluginAppConfig
+	if err := ctx.Config().Bind(&boundCfg); err != nil {
+		t.Fatalf("failed binding config: %v", err)
+	}
+
+	if boundCfg.PollInterval != 5 {
+		t.Errorf("expected PollInterval=5, got %d", boundCfg.PollInterval)
+	}
+
+	if len(boundCfg.Accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(boundCfg.Accounts))
+	}
+
+	if boundCfg.Accounts[0].AccountID != "bot_cskh" || boundCfg.Accounts[0].DefaultAgent != "agent-support" || !boundCfg.Accounts[0].Embeds {
+		t.Errorf("invalid first account config: %+v", boundCfg.Accounts[0])
+	}
+
+	if boundCfg.Accounts[1].AccountID != "bot_devops" || boundCfg.Accounts[1].DefaultAgent != "agent-ops" || boundCfg.Accounts[1].Embeds {
+		t.Errorf("invalid second account config: %+v", boundCfg.Accounts[1])
+	}
+}
+
+func TestAgentMentionExtraction(t *testing.T) {
+	agent, clean := sdk.ExtractAgentMention("@devops help check cluster status")
+	if agent != "devops" || clean != "help check cluster status" {
+		t.Errorf("unexpected mention parse: agent=%q, clean=%q", agent, clean)
+	}
+
+	agent, clean = sdk.ExtractAgentMention("/ask finance what is the MRR?")
+	if agent != "finance" || clean != "what is the MRR?" {
+		t.Errorf("unexpected /ask parse: agent=%q, clean=%q", agent, clean)
+	}
+
+	agent, clean = sdk.ExtractAgentMention("regular chat message")
+	if agent != "" || clean != "regular chat message" {
+		t.Errorf("unexpected plain text parse: agent=%q, clean=%q", agent, clean)
+	}
+}
+

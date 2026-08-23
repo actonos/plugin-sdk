@@ -5,6 +5,9 @@ type Context interface {
 	// HTTP returns the sandboxed outbound HTTP client.
 	HTTP() HTTPClient
 
+	// Config provides access to structured user-configured settings.
+	Config() ConfigStore
+
 	// Vault provides access to authorized Hardware Vault secrets.
 	Vault() VaultClient
 
@@ -16,6 +19,27 @@ type Context interface {
 
 	// Log provides structured logging to ActonOS daemon.
 	Log() Logger
+}
+
+// ConfigStore provides typed access to user-configured plugin settings defined in manifest.
+type ConfigStore interface {
+	// Get retrieves a string config setting by key.
+	Get(key string) (string, bool)
+
+	// GetString retrieves a string config setting with a fallback default.
+	GetString(key string, defaultVal string) string
+
+	// GetInt retrieves an integer config setting with a fallback default.
+	GetInt(key string, defaultVal int) int
+
+	// GetBool retrieves a boolean config setting with a fallback default.
+	GetBool(key string, defaultVal bool) bool
+
+	// GetJSON deserializes a structured sub-key into target struct.
+	GetJSON(key string, target any) (bool, error)
+
+	// Bind unmarshals the entire plugin configuration root into a target struct.
+	Bind(target any) error
 }
 
 // HTTPClient allows performing outbound HTTP calls subject to egress firewall.
