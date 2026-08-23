@@ -81,9 +81,10 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 		return err
 	}
 
-	channelID := msg.Recipient
+	// 1. Prioritize channel_id from metadata (actual text channel), fallback to recipient
+	channelID := msg.Metadata["channel_id"]
 	if channelID == "" {
-		channelID = msg.Metadata["channel_id"]
+		channelID = msg.Recipient
 	}
 	if channelID == "" {
 		return fmt.Errorf("recipient or channel_id is required")
@@ -111,6 +112,22 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 	if err != nil {
 		return fmt.Errorf("discord sendMessage failed: %w", err)
 	}
+
+	// 2. If 404 (Unknown Channel - 10003), target might be a Direct Message (DM) User ID
+	if resp.Status == 404 && strings.Contains(resp.Body, "10003") && msg.Recipient != "" {
+		dmChannelID, dmErr := d.getOrCreateDMChannel(ctx, token, msg.Recipient)
+		if dmErr == nil && dmChannelID != "" {
+			dmURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", dmChannelID)
+			resp, err = ctx.HTTP().DoWithAuth("POST", dmURL, authHeader, map[string]string{
+				"Content-Type": "application/json",
+			}, payload)
+			if err != nil {
+				return fmt.Errorf("discord sendMessage DM failed: %w", err)
+			}
+			channelID = dmChannelID
+		}
+	}
+
 	if resp.Status < 200 || resp.Status >= 300 {
 		return fmt.Errorf("discord API returned HTTP status %d: %s", resp.Status, resp.Body)
 	}
@@ -121,6 +138,35 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 		"status":     "sent",
 	})
 	return nil
+}
+
+func (d *DiscordChannel) getOrCreateDMChannel(ctx sdk.Context, token string, recipientID string) (string, error) {
+	cacheKey := "dm_chan_" + recipientID
+	if cachedID, ok, _ := ctx.Storage().Get(cacheKey); ok && cachedID != "" {
+		return cachedID, nil
+	}
+
+	authHeader := "Bot " + token
+	dmPayload := map[string]string{
+		"recipient_id": recipientID,
+	}
+
+	resp, err := ctx.HTTP().DoWithAuth("POST", "https://discord.com/api/v10/users/@me/channels", authHeader, map[string]string{
+		"Content-Type": "application/json",
+	}, dmPayload)
+	if err != nil || resp.Status < 200 || resp.Status >= 300 {
+		return "", fmt.Errorf("failed creating DM channel: status=%v", resp.Status)
+	}
+
+	var dmResp struct {
+		ID string `json:"id"`
+	}
+	if err := resp.JSON(&dmResp); err != nil || dmResp.ID == "" {
+		return "", fmt.Errorf("invalid DM channel response: %w", err)
+	}
+
+	_ = ctx.Storage().Set(cacheKey, dmResp.ID)
+	return dmResp.ID, nil
 }
 
 func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
