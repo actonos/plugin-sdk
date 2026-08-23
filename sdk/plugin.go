@@ -7,15 +7,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/actonos/acton-plugin-sdk/sdk/abi"
+	"github.com/actonos/plugin-sdk/sdk/abi"
 )
 
 var (
-	pluginMu         sync.RWMutex
-	registeredTools  = make(map[string]Tool)
-	activeChannel    ChannelAdapter
-	activeConnector  Connector
-	defaultCtx       = NewContext()
+	pluginMu        sync.RWMutex
+	registeredTools = make(map[string]Tool)
+	activeChannel   ChannelAdapter
+	activeConnector Connector
+	defaultCtx      = NewContext()
 )
 
 // RegisterTool registers a callable Tool with the plugin runtime.

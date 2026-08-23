@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/actonos/acton-plugin-sdk/host"
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/host"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 func runTest(args []string) error {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 type TelegramChannel struct {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 type WhatsAppChannel struct {
@@ -51,7 +51,7 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 	payload := map[string]any{
 		"messaging_product": "whatsapp",
 		"recipient_type":    "individual",
-		"to":                 msg.Recipient,
+		"to":                msg.Recipient,
 		"type":              "text",
 		"text": map[string]string{
 			"body": msg.Content,

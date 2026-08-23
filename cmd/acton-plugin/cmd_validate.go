@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 var idRegex = regexp.MustCompile(`^[a-z0-9_-]+$`)

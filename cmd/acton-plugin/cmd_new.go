@@ -165,7 +165,7 @@ func generateMainGo(name, pType string) string {
 		return fmt.Sprintf(`package main
 
 import (
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 type %sChannel struct {
@@ -205,11 +205,11 @@ func main() {
 
 import (
 	"fmt"
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 type ListItemsInput struct {
-	Limit int ` + "`" + `json:"limit" jsonschema:"description=Maximum items to fetch"` + "`" + `
+	Limit int `+"`"+`json:"limit" jsonschema:"description=Maximum items to fetch"`+"`"+`
 }
 
 func init() {
@@ -241,12 +241,12 @@ func main() {
 
 import (
 	"fmt"
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 // %sInput defines the JSON schema parameters for this tool.
 type %sInput struct {
-	Query string ` + "`" + `json:"query" jsonschema:"description=Search query or input parameter,required"` + "`" + `
+	Query string `+"`"+`json:"query" jsonschema:"description=Search query or input parameter,required"`+"`"+`
 }
 
 func init() {
@@ -276,7 +276,7 @@ func generateTestGo(name, pType string) string {
 
 import (
 	"testing"
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 func TestPluginLogic(t *testing.T) {

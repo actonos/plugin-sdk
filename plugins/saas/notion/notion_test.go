@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/actonos/acton-plugin-sdk/host"
+	"github.com/actonos/plugin-sdk/host"
 )
 
 func TestNotionPluginWasm(t *testing.T) {

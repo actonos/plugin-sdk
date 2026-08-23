@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 // WeatherInput defines the LLM input schema for get_weather.

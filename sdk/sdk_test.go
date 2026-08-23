@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/actonos/acton-plugin-sdk/sdk"
-	"github.com/actonos/acton-plugin-sdk/sdk/abi"
+	"github.com/actonos/plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk/abi"
 )
 
 type CityWeatherInput struct {

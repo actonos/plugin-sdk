@@ -1,6 +1,6 @@
 # ActonOS Plugin Developer Guide
 
-This document explains the architecture, abstractions, and API surfaces provided by `github.com/actonos/acton-plugin-sdk/sdk`.
+This document explains the architecture, abstractions, and API surfaces provided by `github.com/actonos/plugin-sdk/sdk`.
 
 ---
 

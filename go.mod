@@ -1,4 +1,4 @@
-module github.com/actonos/acton-plugin-sdk
+module github.com/actonos/plugin-sdk
 
 go 1.22
 

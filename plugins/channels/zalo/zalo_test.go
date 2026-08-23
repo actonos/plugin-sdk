@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/actonos/acton-plugin-sdk/host"
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/host"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 func TestZaloPluginWasm(t *testing.T) {

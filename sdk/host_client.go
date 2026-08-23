@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/actonos/acton-plugin-sdk/sdk/abi"
+	"github.com/actonos/plugin-sdk/sdk/abi"
 )
 
 type defaultContext struct {
@@ -27,11 +27,11 @@ func NewContext() Context {
 	}
 }
 
-func (c *defaultContext) HTTP() HTTPClient       { return c.http }
-func (c *defaultContext) Vault() VaultClient     { return c.vault }
-func (c *defaultContext) Storage() KVStorage     { return c.storage }
-func (c *defaultContext) EventBus() EventBus     { return c.eventBus }
-func (c *defaultContext) Log() Logger            { return c.logger }
+func (c *defaultContext) HTTP() HTTPClient   { return c.http }
+func (c *defaultContext) Vault() VaultClient { return c.vault }
+func (c *defaultContext) Storage() KVStorage { return c.storage }
+func (c *defaultContext) EventBus() EventBus { return c.eventBus }
+func (c *defaultContext) Log() Logger        { return c.logger }
 
 // --- HTTP Client Implementation ---
 

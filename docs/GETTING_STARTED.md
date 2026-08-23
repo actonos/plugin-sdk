@@ -31,7 +31,7 @@ acton-plugin new linear-connector --type=connector
 
 This creates a directory with:
 - `manifest.json`: Capabilities and sandbox permissions.
-- `main.go`: Tool implementation using `github.com/actonos/acton-plugin-sdk/sdk`.
+- `main.go`: Tool implementation using `github.com/actonos/plugin-sdk/sdk`.
 - `main_test.go`: Unit tests.
 - `README.md`: Plugin documentation.
 
@@ -46,7 +46,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/actonos/acton-plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk"
 )
 
 type ConvertInput struct {
