@@ -1,0 +1,40 @@
+{
+  "id": "connector-jira",
+  "name": "Jira Connector",
+  "version": "1.0.0",
+  "description": "Jira Cloud REST API integration for ActonOS AI agents (JQL Search, Issue Management, Transitions)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["api.atlassian.com"],
+    "secrets": ["jira_api_token", "jira_cloud_id"],
+    "storage": false,
+    "bus_events": ["connector.jira.issue_created", "connector.jira.issue_transitioned"]
+  },
+  "connectors": [
+    {
+      "name": "jira",
+      "display_name": "Jira Cloud",
+      "auth_type": "oauth2",
+      "actions": ["search_issues_jql", "create_issue", "transition_issue"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_jira_search_issues_jql",
+      "description": "Search Jira issues using JQL (Jira Query Language)",
+      "category": "jira"
+    },
+    {
+      "name": "connector_jira_create_issue",
+      "description": "Create a new Jira issue (Bug, Task, Story)",
+      "category": "jira"
+    },
+    {
+      "name": "connector_jira_transition_issue",
+      "description": "Move a Jira issue to a new workflow status",
+      "category": "jira"
+    }
+  ]
+}

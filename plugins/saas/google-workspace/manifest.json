@@ -1,0 +1,45 @@
+{
+  "id": "connector-google-workspace",
+  "name": "Google Workspace Connector",
+  "version": "1.0.0",
+  "description": "Google Workspace integration for ActonOS AI agents (Gmail, Google Calendar, Google Drive, Google Docs)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["gmail.googleapis.com", "www.googleapis.com"],
+    "secrets": ["google_workspace_access_token"],
+    "storage": false,
+    "bus_events": ["connector.google.email_sent", "connector.google.event_created"]
+  },
+  "connectors": [
+    {
+      "name": "google-workspace",
+      "display_name": "Google Workspace",
+      "auth_type": "oauth2",
+      "actions": ["send_email", "create_calendar_event", "list_drive_files", "get_doc_content"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_google-workspace_send_email",
+      "description": "Send an email via Gmail API",
+      "category": "google"
+    },
+    {
+      "name": "connector_google-workspace_create_calendar_event",
+      "description": "Schedule a meeting or calendar event via Google Calendar API",
+      "category": "google"
+    },
+    {
+      "name": "connector_google-workspace_list_drive_files",
+      "description": "Search and list files on Google Drive",
+      "category": "google"
+    },
+    {
+      "name": "connector_google-workspace_get_doc_content",
+      "description": "Retrieve document text content from Google Docs",
+      "category": "google"
+    }
+  ]
+}

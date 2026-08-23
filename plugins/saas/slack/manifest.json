@@ -1,0 +1,40 @@
+{
+  "id": "connector-slack",
+  "name": "Slack SaaS Connector",
+  "version": "1.0.0",
+  "description": "Slack SaaS API integration for ActonOS AI agents (Post Message, List Channels, Conversations History)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["slack.com"],
+    "secrets": ["slack_bot_token"],
+    "storage": false,
+    "bus_events": ["connector.slack.message_posted"]
+  },
+  "connectors": [
+    {
+      "name": "slack",
+      "display_name": "Slack",
+      "auth_type": "oauth2",
+      "actions": ["post_message", "list_channels", "get_history"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_slack_post_message",
+      "description": "Post a message or notification to a Slack channel",
+      "category": "slack"
+    },
+    {
+      "name": "connector_slack_list_channels",
+      "description": "List public and private channels in Slack workspace",
+      "category": "slack"
+    },
+    {
+      "name": "connector_slack_get_history",
+      "description": "Retrieve recent message history from a Slack channel",
+      "category": "slack"
+    }
+  ]
+}

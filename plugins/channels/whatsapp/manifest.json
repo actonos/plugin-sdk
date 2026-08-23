@@ -1,0 +1,22 @@
+{
+  "id": "channel-whatsapp",
+  "name": "WhatsApp Cloud Channel",
+  "version": "1.0.0",
+  "description": "WhatsApp Business Cloud API integration for ActonOS AI agents with text and template messaging",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["channel"],
+  "permissions": {
+    "net_outbound": ["graph.facebook.com"],
+    "secrets": ["whatsapp_access_token", "whatsapp_phone_number_id"],
+    "storage": true,
+    "bus_events": ["channel.whatsapp.received", "channel.whatsapp.sent"]
+  },
+  "channels": [
+    {
+      "name": "whatsapp",
+      "display_name": "WhatsApp Cloud",
+      "requires_pairing": true
+    }
+  ]
+}

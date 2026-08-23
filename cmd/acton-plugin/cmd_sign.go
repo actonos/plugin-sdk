@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 func runSign(args []string) error {
@@ -17,12 +19,18 @@ func runSign(args []string) error {
 	manifestPath := fs.String("manifest", "manifest.json", "Path to manifest.json")
 	wasmPath := fs.String("wasm", "dist/plugin.wasm", "Path to compiled .wasm file")
 	outputPath := fs.String("output", "dist/signature.sig", "Path to output signature file")
+	fs.StringVar(outputPath, "out", "dist/signature.sig", "Path to output signature file (alias for -output)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if *genKey {
+		keyDir := filepath.Dir(*keyPath)
+		if keyDir != "." && keyDir != "" {
+			_ = os.MkdirAll(keyDir, 0755)
+		}
+
 		pub, priv, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			return fmt.Errorf("generating ed25519 key: %w", err)
@@ -49,11 +57,16 @@ func runSign(args []string) error {
 		return fmt.Errorf("reading private key '%s': %w (use --gen-key to create one)", *keyPath, err)
 	}
 
-	privKeyBytes, err := hex.DecodeString(string(keyHex))
+	privKeyBytes, err := hex.DecodeString(strings.TrimSpace(string(keyHex)))
 	if err != nil || len(privKeyBytes) != ed25519.PrivateKeySize {
 		return fmt.Errorf("invalid private key in '%s', must be 64-byte hex string", *keyPath)
 	}
 	privKey := ed25519.PrivateKey(privKeyBytes)
+
+	outDir := filepath.Dir(*outputPath)
+	if outDir != "." && outDir != "" {
+		_ = os.MkdirAll(outDir, 0755)
+	}
 
 	// Compute digest = SHA-256(manifest.json || plugin.wasm)
 	manifestBytes, err := os.ReadFile(*manifestPath)

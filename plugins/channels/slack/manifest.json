@@ -1,0 +1,22 @@
+{
+  "id": "channel-slack",
+  "name": "Slack Bot Channel",
+  "version": "1.0.0",
+  "description": "Slack integration for ActonOS AI agents with Block Kit formatting, thread replies, and multi-agent routing",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["channel"],
+  "permissions": {
+    "net_outbound": ["slack.com"],
+    "secrets": ["slack_bot_token"],
+    "storage": true,
+    "bus_events": ["channel.slack.received", "channel.slack.sent"]
+  },
+  "channels": [
+    {
+      "name": "slack",
+      "display_name": "Slack Bot",
+      "requires_pairing": true
+    }
+  ]
+}

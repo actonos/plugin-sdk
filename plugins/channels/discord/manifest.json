@@ -1,0 +1,22 @@
+{
+  "id": "channel-discord",
+  "name": "Discord Bot Channel",
+  "version": "1.0.0",
+  "description": "Discord Bot integration for ActonOS AI agents with rich embeds, channel messaging, and multi-agent routing",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["channel"],
+  "permissions": {
+    "net_outbound": ["discord.com"],
+    "secrets": ["discord_bot_token"],
+    "storage": true,
+    "bus_events": ["channel.discord.received", "channel.discord.sent"]
+  },
+  "channels": [
+    {
+      "name": "discord",
+      "display_name": "Discord Bot",
+      "requires_pairing": true
+    }
+  ]
+}

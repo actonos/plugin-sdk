@@ -1,0 +1,50 @@
+{
+  "id": "connector-github",
+  "name": "GitHub Connector",
+  "version": "1.0.0",
+  "description": "GitHub integration for ActonOS AI agents (Repositories, Issues, Pull Requests, Code Search)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["api.github.com"],
+    "secrets": ["github_access_token"],
+    "storage": false,
+    "bus_events": ["connector.github.issue_created", "connector.github.pr_created"]
+  },
+  "connectors": [
+    {
+      "name": "github",
+      "display_name": "GitHub",
+      "auth_type": "oauth2",
+      "actions": ["list_repos", "get_issue", "create_issue", "create_pull_request", "search_code"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_github_list_repos",
+      "description": "List GitHub repositories for user or organization",
+      "category": "github"
+    },
+    {
+      "name": "connector_github_get_issue",
+      "description": "Get issue details from GitHub repository",
+      "category": "github"
+    },
+    {
+      "name": "connector_github_create_issue",
+      "description": "Create a new issue on GitHub repository",
+      "category": "github"
+    },
+    {
+      "name": "connector_github_create_pull_request",
+      "description": "Create a new Pull Request on GitHub repository",
+      "category": "github"
+    },
+    {
+      "name": "connector_github_search_code",
+      "description": "Search code across GitHub repositories",
+      "category": "github"
+    }
+  ]
+}

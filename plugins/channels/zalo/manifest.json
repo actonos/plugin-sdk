@@ -1,0 +1,22 @@
+{
+  "id": "channel-zalo",
+  "name": "Zalo OA Channel",
+  "version": "1.0.0",
+  "description": "Zalo Official Account OpenAPI integration for ActonOS AI agents for Vietnamese users",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["channel"],
+  "permissions": {
+    "net_outbound": ["openapi.zalo.me"],
+    "secrets": ["zalo_oa_access_token"],
+    "storage": true,
+    "bus_events": ["channel.zalo.received", "channel.zalo.sent"]
+  },
+  "channels": [
+    {
+      "name": "zalo",
+      "display_name": "Zalo Official Account",
+      "requires_pairing": true
+    }
+  ]
+}

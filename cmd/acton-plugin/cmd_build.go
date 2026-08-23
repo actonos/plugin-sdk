@@ -6,13 +6,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 func runBuild(args []string) error {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	output := fs.String("output", "dist/plugin.wasm", "Output WASM file path")
+	fs.StringVar(output, "out", "dist/plugin.wasm", "Output WASM file path (alias for -output)")
 	sourceDir := fs.String("source", ".", "Source directory containing main.go")
+	fs.StringVar(sourceDir, "src", ".", "Source directory containing main.go (alias for -source)")
 	useTinyGo := fs.Bool("tinygo", false, "Use TinyGo compiler instead of standard Go compiler")
 
 	if err := fs.Parse(args); err != nil {
@@ -29,13 +32,18 @@ func runBuild(args []string) error {
 	fmt.Printf("🔨 Building WebAssembly plugin from '%s'...\n", *sourceDir)
 	startTime := time.Now()
 
+	srcPkg := *sourceDir
+	if !strings.HasPrefix(srcPkg, ".") && !filepath.IsAbs(srcPkg) {
+		srcPkg = "./" + srcPkg
+	}
+
 	var cmd *exec.Cmd
 	if *useTinyGo {
 		fmt.Println("Using TinyGo compiler (-target=wasi)...")
-		cmd = exec.Command("tinygo", "build", "-target=wasi", "-opt=2", "-o", *output, *sourceDir)
+		cmd = exec.Command("tinygo", "build", "-target=wasi", "-opt=2", "-o", *output, srcPkg)
 	} else {
 		fmt.Println("Using Standard Go compiler (GOOS=wasip1 GOARCH=wasm -buildmode=c-shared)...")
-		cmd = exec.Command("go", "build", "-buildmode=c-shared", "-trimpath", "-o", *output, *sourceDir)
+		cmd = exec.Command("go", "build", "-buildmode=c-shared", "-trimpath", "-o", *output, srcPkg)
 		cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	}
 

@@ -1,0 +1,40 @@
+{
+  "id": "connector-figma",
+  "name": "Figma Connector",
+  "version": "1.0.0",
+  "description": "Figma design integration for ActonOS AI agents (Design Files, Components, Design Comments)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["api.figma.com"],
+    "secrets": ["figma_access_token"],
+    "storage": false,
+    "bus_events": ["connector.figma.comment_posted"]
+  },
+  "connectors": [
+    {
+      "name": "figma",
+      "display_name": "Figma",
+      "auth_type": "oauth2",
+      "actions": ["get_file", "get_comments", "post_comment"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_figma_get_file",
+      "description": "Retrieve Figma design file metadata and node tree",
+      "category": "figma"
+    },
+    {
+      "name": "connector_figma_get_comments",
+      "description": "Get design comments and discussion threads from a Figma file",
+      "category": "figma"
+    },
+    {
+      "name": "connector_figma_post_comment",
+      "description": "Post a design comment or feedback on a Figma file",
+      "category": "figma"
+    }
+  ]
+}

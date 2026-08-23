@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/actonos/acton-plugin-sdk/sdk/abi"
@@ -93,6 +94,16 @@ func acton_tool_execute(ptr uint32, length uint32) (ret uint64) {
 		if t, ok := registeredTools[envelope.ToolName]; ok {
 			targetTool = t
 			toolInput = envelope.Input
+		} else {
+			// Flexible match (dash/underscore tolerance)
+			normalizedTarget := strings.ReplaceAll(envelope.ToolName, "-", "_")
+			for k, t := range registeredTools {
+				if strings.ReplaceAll(k, "-", "_") == normalizedTarget {
+					targetTool = t
+					toolInput = envelope.Input
+					break
+				}
+			}
 		}
 	}
 

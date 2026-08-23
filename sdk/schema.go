@@ -97,8 +97,17 @@ func typeToSchema(t reflect.Type) map[string]any {
 	case reflect.Bool:
 		schema["type"] = "boolean"
 	case reflect.Slice, reflect.Array:
-		schema["type"] = "array"
-		schema["items"] = typeToSchema(t.Elem())
+		if t.Elem().Kind() == reflect.Uint8 {
+			schema["type"] = "string"
+		} else {
+			schema["type"] = "array"
+			schema["items"] = typeToSchema(t.Elem())
+		}
+	case reflect.Map:
+		schema["type"] = "object"
+	case reflect.Interface:
+		// Generic any / object
+		schema["type"] = "object"
 	case reflect.Struct:
 		schema["type"] = "object"
 		subProps := make(map[string]any)

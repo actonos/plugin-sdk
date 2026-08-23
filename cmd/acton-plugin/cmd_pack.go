@@ -18,6 +18,7 @@ func runPack(args []string) error {
 	wasmPath := fs.String("wasm", "dist/plugin.wasm", "Path to compiled .wasm file")
 	sigPath := fs.String("sig", "dist/signature.sig", "Path to signature file (optional)")
 	outputPath := fs.String("output", "", "Output .actonpkg bundle path (defaults to <id>-<version>.actonpkg)")
+	fs.StringVar(outputPath, "out", "", "Output .actonpkg bundle path (alias for -output)")
 
 	if err := fs.Parse(args); err != nil {
 		return err

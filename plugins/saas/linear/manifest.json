@@ -1,0 +1,40 @@
+{
+  "id": "connector-linear",
+  "name": "Linear Connector",
+  "version": "1.0.0",
+  "description": "Linear project management integration for ActonOS AI agents (Issues, Projects, Teams)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["api.linear.app"],
+    "secrets": ["linear_api_key"],
+    "storage": false,
+    "bus_events": ["connector.linear.issue_created", "connector.linear.issue_updated"]
+  },
+  "connectors": [
+    {
+      "name": "linear",
+      "display_name": "Linear",
+      "auth_type": "api_key",
+      "actions": ["list_issues", "create_issue", "update_issue_status"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_linear_list_issues",
+      "description": "List issues from Linear workspace",
+      "category": "linear"
+    },
+    {
+      "name": "connector_linear_create_issue",
+      "description": "Create a new issue/task in Linear",
+      "category": "linear"
+    },
+    {
+      "name": "connector_linear_update_issue_status",
+      "description": "Update the state or status of a Linear issue",
+      "category": "linear"
+    }
+  ]
+}

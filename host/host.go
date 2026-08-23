@@ -82,6 +82,13 @@ func (h *MockHost) SetVaultSecret(key, value string) {
 	h.vault[key] = value
 }
 
+// SetStorage sets a key-value pair in the mock KV Storage.
+func (h *MockHost) SetStorage(key, value string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.storage[key] = value
+}
+
 // SetAllowedDomains configures the outbound domain egress whitelist.
 func (h *MockHost) SetAllowedDomains(domains []string) {
 	h.mu.Lock()

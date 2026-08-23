@@ -1,0 +1,45 @@
+{
+  "id": "connector-notion",
+  "name": "Notion Connector",
+  "version": "1.0.0",
+  "description": "Notion integration for ActonOS AI agents (Pages, Databases, Blocks, Search)",
+  "author": "ActonOS Core Team",
+  "license": "MIT",
+  "capabilities": ["connector", "tool"],
+  "permissions": {
+    "net_outbound": ["api.notion.com"],
+    "secrets": ["notion_api_key"],
+    "storage": false,
+    "bus_events": ["connector.notion.page_created"]
+  },
+  "connectors": [
+    {
+      "name": "notion",
+      "display_name": "Notion",
+      "auth_type": "bearer",
+      "actions": ["search_pages", "create_page", "query_database", "append_block_children"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "connector_notion_search_pages",
+      "description": "Search Notion pages and databases",
+      "category": "notion"
+    },
+    {
+      "name": "connector_notion_create_page",
+      "description": "Create a new page in Notion workspace or database",
+      "category": "notion"
+    },
+    {
+      "name": "connector_notion_query_database",
+      "description": "Query items from a Notion database",
+      "category": "notion"
+    },
+    {
+      "name": "connector_notion_append_block_children",
+      "description": "Append text blocks or notes to a Notion page",
+      "category": "notion"
+    }
+  ]
+}
