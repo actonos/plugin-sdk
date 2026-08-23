@@ -44,17 +44,68 @@
     {
       "name": "connector_jira_search_issues_jql",
       "description": "Search Jira issues using JQL (Jira Query Language)",
-      "category": "jira"
+      "category": "jira",
+      "schema": {
+        "type": "object",
+        "required": ["jql"],
+        "properties": {
+          "jql": {
+            "type": "string",
+            "description": "JQL query string (e.g. project = 'ACT' AND status = 'Open')"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum issues to return (default 10)"
+          }
+        }
+      }
     },
     {
       "name": "connector_jira_create_issue",
       "description": "Create a new Jira issue (Bug, Task, Story)",
-      "category": "jira"
+      "category": "jira",
+      "schema": {
+        "type": "object",
+        "required": ["project_key", "summary"],
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Jira project key (e.g. ACT, PROJ)"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Issue summary / title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue description text"
+          },
+          "issue_type": {
+            "type": "string",
+            "description": "Issue type (e.g. Task, Bug, Story)",
+            "default": "Task"
+          }
+        }
+      }
     },
     {
       "name": "connector_jira_transition_issue",
       "description": "Move a Jira issue to a new workflow status",
-      "category": "jira"
+      "category": "jira",
+      "schema": {
+        "type": "object",
+        "required": ["issue_key", "transition_id"],
+        "properties": {
+          "issue_key": {
+            "type": "string",
+            "description": "Jira issue key (e.g. ACT-123)"
+          },
+          "transition_id": {
+            "type": "string",
+            "description": "Target workflow transition ID (e.g. 21, 31)"
+          }
+        }
+      }
     }
   ]
 }

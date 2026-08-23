@@ -38,22 +38,81 @@
     {
       "name": "connector_notion_search_pages",
       "description": "Search Notion pages and databases",
-      "category": "notion"
+      "category": "notion",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search keyword for pages or databases"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results to return (default 10)"
+          }
+        }
+      }
     },
     {
       "name": "connector_notion_create_page",
       "description": "Create a new page in Notion workspace or database",
-      "category": "notion"
+      "category": "notion",
+      "schema": {
+        "type": "object",
+        "required": ["parent_page_id", "title"],
+        "properties": {
+          "parent_page_id": {
+            "type": "string",
+            "description": "Parent Notion page ID (UUID)"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the new page"
+          },
+          "content": {
+            "type": "string",
+            "description": "Initial paragraph text content"
+          }
+        }
+      }
     },
     {
       "name": "connector_notion_query_database",
       "description": "Query items from a Notion database",
-      "category": "notion"
+      "category": "notion",
+      "schema": {
+        "type": "object",
+        "required": ["database_id"],
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Notion database ID (UUID)"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Maximum database records to fetch (default 10)"
+          }
+        }
+      }
     },
     {
       "name": "connector_notion_append_block_children",
       "description": "Append text blocks or notes to a Notion page",
-      "category": "notion"
+      "category": "notion",
+      "schema": {
+        "type": "object",
+        "required": ["block_id", "content"],
+        "properties": {
+          "block_id": {
+            "type": "string",
+            "description": "Notion block or page ID (UUID)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Text paragraph content to append"
+          }
+        }
+      }
     }
   ]
 }

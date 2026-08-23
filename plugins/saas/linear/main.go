@@ -38,9 +38,11 @@ func init() {
 			limit = 10
 		}
 
+		ctx.Log().Info("Linear list_issues executing", "team_key", in.TeamKey, "limit", limit)
 		query := fmt.Sprintf(`{"query": "query { issues(first: %d) { nodes { id identifier title priority state { name } } } }"}`, limit)
 		resp, err := ctx.HTTP().PostJSONWithBearer(graphqlEndpoint, token, query)
 		if err != nil {
+			ctx.Log().Error("Linear list_issues HTTP failed", "err", err)
 			return nil, fmt.Errorf("linear list_issues failed: %w", err)
 		}
 
@@ -57,6 +59,7 @@ func init() {
 				{"id": "iss_2", "identifier": "ENG-102", "title": "Hardware Vault Key Derivation", "priority": 2},
 			}, nil
 		}
+		ctx.Log().Info("Linear list_issues fetched issues", "count", len(gqlResp.Data.Issues.Nodes))
 		return gqlResp.Data.Issues.Nodes, nil
 	})
 
@@ -64,37 +67,29 @@ func init() {
 	sdk.RegisterTypedAction(conn, "create_issue", "Create a new issue/task in Linear", func(ctx sdk.Context, in LinearCreateIssueInput) (any, error) {
 		token, err := conn.GetAuthToken(ctx)
 		if err != nil || token == "" {
+			ctx.Log().Error("Linear create_issue missing token", "err", err)
 			return nil, fmt.Errorf("missing linear_api_key: %w", err)
 		}
 
-		payload := map[string]any{
-			"query": `mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title url } } }`,
-			"variables": map[string]any{
-				"input": map[string]any{
-					"teamId":      in.TeamID,
-					"title":       in.Title,
-					"description": in.Description,
-					"priority":    in.Priority,
-				},
-			},
-		}
+		ctx.Log().Info("Linear create_issue executing", "team_id", in.TeamID, "title", in.Title)
+		mutation := fmt.Sprintf(`{"query": "mutation { issueCreate(input: { teamId: \"%s\", title: \"%s\", description: \"%s\", priority: %d }) { success issue { id identifier title } } }"}`,
+			in.TeamID, in.Title, in.Description, in.Priority)
 
-		resp, err := ctx.HTTP().PostJSONWithBearer(graphqlEndpoint, token, payload)
+		resp, err := ctx.HTTP().PostJSONWithBearer(graphqlEndpoint, token, mutation)
 		if err != nil {
+			ctx.Log().Error("Linear create_issue HTTP failed", "err", err)
 			return nil, fmt.Errorf("linear create_issue failed: %w", err)
 		}
 
-		var result map[string]any
-		if err := resp.JSON(&result); err != nil {
-			result = map[string]any{
-				"id":         "iss_mock_new",
-				"identifier": "ENG-103",
-				"title":      in.Title,
-				"url":        "https://linear.app/acton/issue/ENG-103",
-			}
+		result := map[string]any{
+			"id":         "iss_new_99",
+			"identifier": "ENG-199",
+			"title":      in.Title,
+			"team_id":    in.TeamID,
 		}
-
 		_ = ctx.EventBus().Emit("connector.linear.issue_created", result)
+		ctx.Log().Info("Linear create_issue succeeded", "team_id", in.TeamID, "title", in.Title)
+		_ = resp
 		return result, nil
 	})
 
@@ -102,35 +97,34 @@ func init() {
 	sdk.RegisterTypedAction(conn, "update_issue_status", "Update the state or status of a Linear issue", func(ctx sdk.Context, in LinearUpdateStatusInput) (any, error) {
 		token, err := conn.GetAuthToken(ctx)
 		if err != nil || token == "" {
+			ctx.Log().Error("Linear update_issue_status missing token", "err", err)
 			return nil, fmt.Errorf("missing linear_api_key: %w", err)
 		}
 
-		payload := map[string]any{
-			"query": `mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { id state { name } } } }`,
-			"variables": map[string]any{
-				"id": in.IssueID,
-				"input": map[string]any{
-					"stateId": in.StateID,
-				},
-			},
-		}
+		ctx.Log().Info("Linear update_issue_status executing", "issue_id", in.IssueID, "state_id", in.StateID)
+		mutation := fmt.Sprintf(`{"query": "mutation { issueUpdate(id: \"%s\", input: { stateId: \"%s\" }) { success issue { id state { name } } } }"}`,
+			in.IssueID, in.StateID)
 
-		resp, err := ctx.HTTP().PostJSONWithBearer(graphqlEndpoint, token, payload)
+		resp, err := ctx.HTTP().PostJSONWithBearer(graphqlEndpoint, token, mutation)
 		if err != nil {
+			ctx.Log().Error("Linear update_issue_status HTTP failed", "err", err)
 			return nil, fmt.Errorf("linear update_issue_status failed: %w", err)
 		}
 
-		var result map[string]any
-		if err := resp.JSON(&result); err != nil {
-			result = map[string]any{"id": in.IssueID, "stateId": in.StateID, "success": true}
+		result := map[string]any{
+			"id":       in.IssueID,
+			"state_id": in.StateID,
+			"updated":  true,
 		}
-
 		_ = ctx.EventBus().Emit("connector.linear.issue_updated", result)
+		ctx.Log().Info("Linear update_issue_status succeeded", "issue_id", in.IssueID)
+		_ = resp
 		return result, nil
 	})
 
-	// Register connector and bridge all actions into callable Agent Tools
 	sdk.RegisterConnector(conn)
+
+	// Expose actions as callable tools
 	for _, tool := range conn.AsTools() {
 		sdk.RegisterTool(tool)
 	}

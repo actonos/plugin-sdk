@@ -14,7 +14,23 @@
     {
       "name": "get_weather",
       "description": "Get current weather conditions (temperature, windspeed, weather code) and forecast for a specified city name",
-      "category": "weather"
+      "category": "weather",
+      "schema": {
+        "type": "object",
+        "required": ["city"],
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "Target city name (e.g. Tokyo, Paris, New York)"
+          },
+          "units": {
+            "type": "string",
+            "description": "Temperature units (celsius or fahrenheit)",
+            "enum": ["celsius", "fahrenheit"],
+            "default": "celsius"
+          }
+        }
+      }
     }
   ]
 }

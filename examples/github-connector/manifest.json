@@ -5,7 +5,7 @@
   "description": "Seamless integration with GitHub API for inspecting repositories, issues, pull requests and committing changes",
   "author": "ActonOS Team",
   "license": "MIT",
-  "capabilities": ["connector"],
+  "capabilities": ["connector", "tool"],
   "permissions": {
     "net_outbound": ["api.github.com"],
     "secrets": ["github_access_token"],
@@ -17,6 +17,62 @@
       "display_name": "GitHub",
       "auth_type": "oauth2",
       "actions": ["list_repos", "get_issue", "create_issue"]
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "required": ["github_access_token"],
+    "properties": {
+      "github_access_token": {
+        "type": "string",
+        "title": "GitHub Personal Access Token",
+        "description": "Personal Access Token with repo scope",
+        "x-secret": true,
+        "x-ui-widget": "password"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "connector_github_list_repos",
+      "description": "List GitHub repositories for user or organization",
+      "category": "github",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "string", "description": "GitHub username or org" },
+          "limit": { "type": "integer", "description": "Maximum repos to return" }
+        }
+      }
+    },
+    {
+      "name": "connector_github_get_issue",
+      "description": "Get issue details from GitHub repository",
+      "category": "github",
+      "schema": {
+        "type": "object",
+        "required": ["owner", "repo", "issue_number"],
+        "properties": {
+          "owner": { "type": "string", "description": "Repository owner" },
+          "repo": { "type": "string", "description": "Repository name" },
+          "issue_number": { "type": "integer", "description": "Issue number" }
+        }
+      }
+    },
+    {
+      "name": "connector_github_create_issue",
+      "description": "Create a new issue on GitHub repository",
+      "category": "github",
+      "schema": {
+        "type": "object",
+        "required": ["owner", "repo", "title"],
+        "properties": {
+          "owner": { "type": "string", "description": "Repository owner" },
+          "repo": { "type": "string", "description": "Repository name" },
+          "title": { "type": "string", "description": "Issue title" },
+          "body": { "type": "string", "description": "Issue description" }
+        }
+      }
     }
   ]
 }

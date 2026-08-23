@@ -38,22 +38,85 @@
     {
       "name": "connector_google-workspace_send_email",
       "description": "Send an email via Gmail API",
-      "category": "google"
+      "category": "google",
+      "schema": {
+        "type": "object",
+        "required": ["to", "subject", "body"],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient email address"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject line"
+          },
+          "body": {
+            "type": "string",
+            "description": "Email body content in plain text or HTML"
+          }
+        }
+      }
     },
     {
       "name": "connector_google-workspace_create_calendar_event",
       "description": "Schedule a meeting or calendar event via Google Calendar API",
-      "category": "google"
+      "category": "google",
+      "schema": {
+        "type": "object",
+        "required": ["summary", "start_time", "end_time"],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "description": "Event title or meeting summary"
+          },
+          "description": {
+            "type": "string",
+            "description": "Event details or meeting agenda"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Event start in ISO8601 format (e.g. 2026-08-25T10:00:00Z)"
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Event end in ISO8601 format (e.g. 2026-08-25T11:00:00Z)"
+          }
+        }
+      }
     },
     {
       "name": "connector_google-workspace_list_drive_files",
       "description": "Search and list files on Google Drive",
-      "category": "google"
+      "category": "google",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Google Drive search query (e.g. name contains 'Contract')"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum files to return (default 10)"
+          }
+        }
+      }
     },
     {
       "name": "connector_google-workspace_get_doc_content",
       "description": "Retrieve document text content from Google Docs",
-      "category": "google"
+      "category": "google",
+      "schema": {
+        "type": "object",
+        "required": ["document_id"],
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Google Docs file / document ID"
+          }
+        }
+      }
     }
   ]
 }

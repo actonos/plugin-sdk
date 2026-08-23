@@ -118,15 +118,20 @@ func acton_tool_execute(ptr uint32, length uint32) (ret uint64) {
 	}
 
 	if targetTool == nil {
+		defaultCtx.Log().Error("no matching tool registered in plugin", "requested", envelope.ToolName)
 		res := NewResultError("no matching tool registered in plugin")
 		b, _ := json.Marshal(res)
 		p, l := abi.BytesToPtr(b)
 		return abi.PackPtrLen(p, l)
 	}
 
+	defaultCtx.Log().Info("Executing tool", "tool", targetTool.Name())
 	result, err := targetTool.Execute(defaultCtx, toolInput)
 	if err != nil {
+		defaultCtx.Log().Error("Tool execution failed", "tool", targetTool.Name(), "err", err)
 		result = NewResultError(err.Error())
+	} else {
+		defaultCtx.Log().Info("Tool execution completed successfully", "tool", targetTool.Name())
 	}
 	if result == nil {
 		result = NewResult("")
@@ -156,6 +161,7 @@ func acton_channel_send(ptr uint32, length uint32) (ret int32) {
 	pluginMu.RUnlock()
 
 	if ch == nil {
+		defaultCtx.Log().Error("acton_channel_send called but no channel adapter registered")
 		return -1
 	}
 
@@ -166,11 +172,13 @@ func acton_channel_send(ptr uint32, length uint32) (ret int32) {
 		return -2
 	}
 
+	defaultCtx.Log().Info("Channel SendMessage dispatching", "channel", ch.Name(), "recipient", msg.Recipient, "account_id", msg.AccountID)
 	if err := ch.SendMessage(defaultCtx, msg); err != nil {
-		defaultCtx.Log().Error("channel SendMessage error", "err", err)
+		defaultCtx.Log().Error("channel SendMessage error", "channel", ch.Name(), "recipient", msg.Recipient, "err", err)
 		return -3
 	}
 
+	defaultCtx.Log().Info("Channel SendMessage completed successfully", "channel", ch.Name(), "recipient", msg.Recipient)
 	return 0
 }
 
@@ -194,8 +202,12 @@ func acton_channel_poll() (ret uint64) {
 
 	msgs, err := ch.PollMessages(defaultCtx)
 	if err != nil {
-		defaultCtx.Log().Error("channel PollMessages error", "err", err)
+		defaultCtx.Log().Error("channel PollMessages error", "channel", ch.Name(), "err", err)
 		return 0
+	}
+
+	if len(msgs) > 0 {
+		defaultCtx.Log().Info("Channel PollMessages received incoming messages", "channel", ch.Name(), "count", len(msgs))
 	}
 
 	b, err := json.Marshal(msgs)
@@ -212,6 +224,7 @@ func acton_channel_poll() (ret uint64) {
 func acton_connector_action(ptr uint32, length uint32) (ret uint64) {
 	defer func() {
 		if r := recover(); r != nil {
+			defaultCtx.Log().Error("panic in acton_connector_action", "panic", r)
 			res := map[string]any{"error": fmt.Sprintf("connector panic: %v", r)}
 			b, _ := json.Marshal(res)
 			p, l := abi.BytesToPtr(b)
@@ -224,6 +237,7 @@ func acton_connector_action(ptr uint32, length uint32) (ret uint64) {
 	pluginMu.RUnlock()
 
 	if conn == nil {
+		defaultCtx.Log().Error("acton_connector_action called but no connector registered")
 		res := map[string]any{"error": "no connector registered"}
 		b, _ := json.Marshal(res)
 		p, l := abi.BytesToPtr(b)
@@ -233,20 +247,24 @@ func acton_connector_action(ptr uint32, length uint32) (ret uint64) {
 	payloadBytes := abi.PtrToBytes(ptr, length)
 	var payload ConnectorActionPayload
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		defaultCtx.Log().Error("failed unmarshaling ConnectorActionPayload", "err", err)
 		res := map[string]any{"error": fmt.Sprintf("invalid action payload: %v", err)}
 		b, _ := json.Marshal(res)
 		p, l := abi.BytesToPtr(b)
 		return abi.PackPtrLen(p, l)
 	}
 
+	defaultCtx.Log().Info("Executing connector action", "connector", conn.Name(), "action", payload.Action)
 	output, err := conn.DispatchAction(defaultCtx, payload.Action, payload.Params)
 	if err != nil {
+		defaultCtx.Log().Error("Connector action failed", "connector", conn.Name(), "action", payload.Action, "err", err)
 		res := map[string]any{"error": err.Error()}
 		b, _ := json.Marshal(res)
 		p, l := abi.BytesToPtr(b)
 		return abi.PackPtrLen(p, l)
 	}
 
+	defaultCtx.Log().Info("Connector action completed successfully", "connector", conn.Name(), "action", payload.Action)
 	outBytes, _ := json.Marshal(output)
 	p, l := abi.BytesToPtr(outBytes)
 	return abi.PackPtrLen(p, l)

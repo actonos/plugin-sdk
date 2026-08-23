@@ -53,6 +53,7 @@ func init() {
 			limit = 10
 		}
 
+		ctx.Log().Info("GitHub list_repos executing", "user", in.User, "limit", limit)
 		reqURL := fmt.Sprintf("https://api.github.com/user/repos?per_page=%d", limit)
 		if in.User != "" {
 			reqURL = fmt.Sprintf("https://api.github.com/users/%s/repos?per_page=%d", in.User, limit)
@@ -60,6 +61,7 @@ func init() {
 
 		resp, err := ctx.HTTP().GetWithBearer(reqURL, token)
 		if err != nil {
+			ctx.Log().Error("GitHub list_repos HTTP failed", "err", err)
 			return nil, fmt.Errorf("github list_repos API failed: %w", err)
 		}
 
@@ -70,6 +72,7 @@ func init() {
 				{"name": "ActonOS-Plugin-SDK", "full_name": "actonos/ActonOS-Plugin-SDK", "private": false},
 			}, nil
 		}
+		ctx.Log().Info("GitHub list_repos fetched repositories", "count", len(repos))
 		return repos, nil
 	})
 
@@ -77,9 +80,11 @@ func init() {
 	sdk.RegisterTypedAction(conn, "get_issue", "Get issue details from GitHub repository", func(ctx sdk.Context, in GetIssueInput) (any, error) {
 		token, _ := conn.GetAuthToken(ctx)
 
+		ctx.Log().Info("GitHub get_issue executing", "owner", in.Owner, "repo", in.Repo, "issue", in.IssueNumber)
 		reqURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%d", in.Owner, in.Repo, in.IssueNumber)
 		resp, err := ctx.HTTP().GetWithBearer(reqURL, token)
 		if err != nil {
+			ctx.Log().Error("GitHub get_issue HTTP failed", "err", err)
 			return nil, fmt.Errorf("github get_issue API failed: %w", err)
 		}
 
@@ -91,6 +96,7 @@ func init() {
 				"state":  "open",
 			}, nil
 		}
+		ctx.Log().Info("GitHub get_issue succeeded", "owner", in.Owner, "repo", in.Repo, "issue", in.IssueNumber)
 		return issue, nil
 	})
 
@@ -98,9 +104,11 @@ func init() {
 	sdk.RegisterTypedAction(conn, "create_issue", "Create a new issue on GitHub repository", func(ctx sdk.Context, in CreateIssueInput) (any, error) {
 		token, err := conn.GetAuthToken(ctx)
 		if err != nil || token == "" {
+			ctx.Log().Error("GitHub create_issue missing token", "err", err)
 			return nil, fmt.Errorf("missing github_access_token: %w", err)
 		}
 
+		ctx.Log().Info("GitHub create_issue executing", "owner", in.Owner, "repo", in.Repo, "title", in.Title)
 		reqURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues", in.Owner, in.Repo)
 		payload := map[string]any{
 			"title":  in.Title,
@@ -110,9 +118,11 @@ func init() {
 
 		resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
 		if err != nil {
+			ctx.Log().Error("GitHub create_issue HTTP failed", "err", err)
 			return nil, fmt.Errorf("github create_issue API failed: %w", err)
 		}
 		if resp.Status != 201 && resp.Status != 200 {
+			ctx.Log().Warn("GitHub create_issue non-200, fallback mock", "status", resp.Status)
 			return map[string]any{
 				"number": 101,
 				"title":  in.Title,
@@ -124,6 +134,7 @@ func init() {
 		var created map[string]any
 		_ = resp.JSON(&created)
 		_ = ctx.EventBus().Emit("connector.github.issue_created", created)
+		ctx.Log().Info("GitHub create_issue succeeded", "owner", in.Owner, "repo", in.Repo, "title", in.Title)
 		return created, nil
 	})
 
@@ -131,9 +142,11 @@ func init() {
 	sdk.RegisterTypedAction(conn, "create_pull_request", "Create a new Pull Request on GitHub repository", func(ctx sdk.Context, in CreatePRInput) (any, error) {
 		token, err := conn.GetAuthToken(ctx)
 		if err != nil || token == "" {
+			ctx.Log().Error("GitHub create_pull_request missing token", "err", err)
 			return nil, fmt.Errorf("missing github_access_token: %w", err)
 		}
 
+		ctx.Log().Info("GitHub create_pull_request executing", "owner", in.Owner, "repo", in.Repo, "head", in.Head, "base", in.Base)
 		reqURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls", in.Owner, in.Repo)
 		payload := map[string]any{
 			"title": in.Title,
@@ -144,9 +157,11 @@ func init() {
 
 		resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
 		if err != nil {
+			ctx.Log().Error("GitHub create_pull_request HTTP failed", "err", err)
 			return nil, fmt.Errorf("github create_pull_request API failed: %w", err)
 		}
 		if resp.Status != 201 && resp.Status != 200 {
+			ctx.Log().Warn("GitHub create_pull_request non-200, fallback mock", "status", resp.Status)
 			return map[string]any{
 				"number": 202,
 				"title":  in.Title,
@@ -158,6 +173,7 @@ func init() {
 		var pr map[string]any
 		_ = resp.JSON(&pr)
 		_ = ctx.EventBus().Emit("connector.github.pr_created", pr)
+		ctx.Log().Info("GitHub create_pull_request succeeded", "owner", in.Owner, "repo", in.Repo, "title", in.Title)
 		return pr, nil
 	})
 
@@ -170,26 +186,30 @@ func init() {
 			limit = 10
 		}
 
+		ctx.Log().Info("GitHub search_code executing", "query", in.Query, "limit", limit)
 		reqURL := fmt.Sprintf("https://api.github.com/search/code?q=%s&per_page=%d", url.QueryEscape(in.Query), limit)
 		resp, err := ctx.HTTP().GetWithBearer(reqURL, token)
 		if err != nil {
-			return nil, fmt.Errorf("github search_code failed: %w", err)
+			ctx.Log().Error("GitHub search_code HTTP failed", "err", err)
+			return nil, fmt.Errorf("github search_code API failed: %w", err)
 		}
 
-		var searchRes map[string]any
-		if err := resp.JSON(&searchRes); err != nil {
+		var result map[string]any
+		if err := resp.JSON(&result); err != nil {
 			return map[string]any{
 				"total_count": 1,
 				"items": []map[string]any{
-					{"name": "plugin.go", "path": "sdk/plugin.go", "repository": map[string]any{"full_name": "actonos/ActonOS-Plugin-SDK"}},
+					{"name": "main.go", "path": "cmd/acton-plugin/main.go", "repository": map[string]any{"full_name": "actonos/plugin-sdk"}},
 				},
 			}, nil
 		}
-		return searchRes, nil
+		ctx.Log().Info("GitHub search_code completed", "query", in.Query)
+		return result, nil
 	})
 
-	// Register connector and bridge all actions into callable Agent Tools
 	sdk.RegisterConnector(conn)
+
+	// Expose actions as callable tools
 	for _, tool := range conn.AsTools() {
 		sdk.RegisterTool(tool)
 	}

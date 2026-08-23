@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/actonos/plugin-sdk/sdk"
 )
@@ -41,6 +42,13 @@ type TelegramUpdate struct {
 	} `json:"message"`
 }
 
+type TelegramAPIResponse struct {
+	OK          bool             `json:"ok"`
+	ErrorCode   int              `json:"error_code,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Result      []TelegramUpdate `json:"result,omitempty"`
+}
+
 func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
 	accountID := msg.AccountID
 	if accountID == "" {
@@ -50,8 +58,9 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 		accountID = "default"
 	}
 
-	token, err := getTelegramBotToken(ctx, accountID)
+	token, err := getTelegramBotToken(ctx, TelegramAccount{AccountID: accountID})
 	if err != nil {
+		ctx.Log().Error("Telegram SendMessage token error", "account_id", accountID, "err", err)
 		return err
 	}
 
@@ -70,10 +79,10 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 		"text":    msg.Content,
 	}
 
-	if parseMode, ok := msg.Metadata["parse_mode"]; ok {
+	if parseMode, ok := msg.Metadata["parse_mode"]; ok && parseMode != "" {
 		payload["parse_mode"] = parseMode
 	}
-	if replyTo, ok := msg.Metadata["reply_to_msg_id"]; ok {
+	if replyTo, ok := msg.Metadata["reply_to_msg_id"]; ok && replyTo != "" {
 		if id, err := strconv.Atoi(replyTo); err == nil {
 			payload["reply_to_message_id"] = id
 		}
@@ -81,9 +90,22 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 
 	resp, err := ctx.HTTP().PostJSON(reqURL, payload)
 	if err != nil {
+		ctx.Log().Error("Telegram sendMessage network error", "chat_id", chatID, "err", err)
 		return fmt.Errorf("telegram sendMessage API failed: %w", err)
 	}
+
+	// If Markdown parse error (400 Bad Request), retry as plain text
+	if resp.Status == 400 && payload["parse_mode"] != nil {
+		ctx.Log().Warn("Telegram markdown parse failed, retrying plain text", "body", resp.Body)
+		delete(payload, "parse_mode")
+		resp, err = ctx.HTTP().PostJSON(reqURL, payload)
+		if err != nil {
+			return fmt.Errorf("telegram sendMessage plain retry failed: %w", err)
+		}
+	}
+
 	if resp.Status != 200 {
+		ctx.Log().Error("Telegram API returned error status", "status", resp.Status, "body", resp.Body)
 		return fmt.Errorf("telegram API returned HTTP status %d: %s", resp.Status, resp.Body)
 	}
 
@@ -112,8 +134,9 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	var allInbound []sdk.InboundMessage
 
 	for _, acc := range accounts {
-		token, err := getTelegramBotToken(ctx, acc.AccountID)
+		token, err := getTelegramBotToken(ctx, acc)
 		if err != nil || token == "" {
+			ctx.Log().Debug("Telegram bot token not found for account", "account_id", acc.AccountID)
 			continue
 		}
 
@@ -122,27 +145,46 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 		if rawOffset, ok, _ := ctx.Storage().Get(offsetKey); ok && rawOffset != "" {
 			offset, _ = strconv.Atoi(rawOffset)
 		} else if rawOffset, ok, _ := ctx.Storage().Get("last_update_id"); ok && rawOffset != "" {
-			// Backward compatibility with legacy key
 			offset, _ = strconv.Atoi(rawOffset)
 		}
 
-		reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&limit=10", token, offset)
+		reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?limit=10", token)
+		if offset > 0 {
+			reqURL = fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&limit=10", token, offset)
+		}
+
 		resp, err := ctx.HTTP().Get(reqURL)
 		if err != nil {
+			ctx.Log().Warn("Telegram getUpdates request failed", "account_id", acc.AccountID, "err", err)
 			continue
 		}
 
-		var updateResponse struct {
-			OK     bool             `json:"ok"`
-			Result []TelegramUpdate `json:"result"`
+		// Handle Webhook Conflict (409) -> automatically delete existing webhook so getUpdates works
+		if resp.Status == 409 || (resp.Body != "" && strings.Contains(resp.Body, "can't use getUpdates method while webhook is active")) {
+			ctx.Log().Info("Telegram active webhook detected, clearing webhook for polling mode...", "account_id", acc.AccountID)
+			delURL := fmt.Sprintf("https://api.telegram.org/bot%s/deleteWebhook?drop_pending_updates=false", token)
+			_, _ = ctx.HTTP().Get(delURL)
+			continue
 		}
 
-		if err := resp.JSON(&updateResponse); err != nil {
+		if resp.Status != 200 {
+			ctx.Log().Warn("Telegram getUpdates returned non-200", "account_id", acc.AccountID, "status", resp.Status, "body", resp.Body)
+			continue
+		}
+
+		var apiResp TelegramAPIResponse
+		if err := resp.JSON(&apiResp); err != nil {
+			ctx.Log().Warn("Telegram getUpdates JSON parse failed", "err", err, "raw", resp.Body)
+			continue
+		}
+
+		if !apiResp.OK {
+			ctx.Log().Warn("Telegram getUpdates returned ok=false", "error_code", apiResp.ErrorCode, "desc", apiResp.Description)
 			continue
 		}
 
 		maxID := offset
-		for _, update := range updateResponse.Result {
+		for _, update := range apiResp.Result {
 			if update.UpdateID >= maxID {
 				maxID = update.UpdateID + 1
 			}
@@ -172,6 +214,7 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 
 				allInbound = append(allInbound, inbound)
 				_ = ctx.EventBus().Emit("channel.telegram.received", inbound)
+				ctx.Log().Info("Telegram message received", "from", senderName, "chat_id", inbound.Metadata["chat_id"], "target_agent", targetAgent)
 			}
 		}
 
@@ -183,7 +226,12 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	return allInbound, nil
 }
 
-func getTelegramBotToken(ctx sdk.Context, accountID string) (string, error) {
+func getTelegramBotToken(ctx sdk.Context, acc TelegramAccount) (string, error) {
+	if acc.BotToken != "" {
+		return acc.BotToken, nil
+	}
+
+	accountID := acc.AccountID
 	if accountID != "" && accountID != "default" {
 		if token, err := ctx.Vault().GetSecret("telegram_bot_tokens." + accountID); err == nil && token != "" {
 			return token, nil
@@ -191,13 +239,19 @@ func getTelegramBotToken(ctx sdk.Context, accountID string) (string, error) {
 		if token, err := ctx.Vault().GetSecret("telegram_bot_token_" + accountID); err == nil && token != "" {
 			return token, nil
 		}
+		if token, err := ctx.Vault().GetSecret("accounts." + accountID + ".bot_token"); err == nil && token != "" {
+			return token, nil
+		}
 	}
 
-	token, err := ctx.Vault().GetSecret("telegram_bot_token")
-	if err != nil || token == "" {
-		return "", fmt.Errorf("missing telegram bot token for account %q in vault", accountID)
+	if token, err := ctx.Vault().GetSecret("telegram_bot_token"); err == nil && token != "" {
+		return token, nil
 	}
-	return token, nil
+	if token, err := ctx.Vault().GetSecret("bot_token"); err == nil && token != "" {
+		return token, nil
+	}
+
+	return "", fmt.Errorf("missing telegram bot token for account %q in vault or config", accountID)
 }
 
 func init() {

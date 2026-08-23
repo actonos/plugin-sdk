@@ -35,20 +35,23 @@ func init() {
 			depth = 2
 		}
 
+		ctx.Log().Info("Figma get_file executing", "file_key", in.FileKey, "depth", depth)
 		reqURL := fmt.Sprintf("https://api.figma.com/v1/files/%s?depth=%d", in.FileKey, depth)
 		resp, err := ctx.HTTP().GetWithBearer(reqURL, token)
 		if err != nil {
+			ctx.Log().Error("Figma get_file HTTP failed", "err", err)
 			return nil, fmt.Errorf("figma get_file failed: %w", err)
 		}
 
 		var fileRes map[string]any
 		if err := resp.JSON(&fileRes); err != nil {
-			return map[string]any{
+			fileRes = map[string]any{
 				"name":         "ActonOS Design System",
 				"lastModified": "2026-08-24T00:00:00Z",
 				"version":      "1.0",
-			}, nil
+			}
 		}
+		ctx.Log().Info("Figma get_file completed", "file_key", in.FileKey)
 		return fileRes, nil
 	})
 
@@ -56,30 +59,32 @@ func init() {
 	sdk.RegisterTypedAction(conn, "get_comments", "Get design comments and discussion threads from a Figma file", func(ctx sdk.Context, in FigmaGetCommentsInput) (any, error) {
 		token, _ := conn.GetAuthToken(ctx)
 
+		ctx.Log().Info("Figma get_comments executing", "file_key", in.FileKey)
 		reqURL := fmt.Sprintf("https://api.figma.com/v1/files/%s/comments", in.FileKey)
 		resp, err := ctx.HTTP().GetWithBearer(reqURL, token)
 		if err != nil {
+			ctx.Log().Error("Figma get_comments HTTP failed", "err", err)
 			return nil, fmt.Errorf("figma get_comments failed: %w", err)
 		}
 
-		var commRes struct {
-			Comments []map[string]any `json:"comments"`
+		var commentsRes map[string]any
+		if err := resp.JSON(&commentsRes); err != nil {
+			commentsRes = map[string]any{"comments": []any{}}
 		}
-		if err := resp.JSON(&commRes); err != nil || len(commRes.Comments) == 0 {
-			return []map[string]any{
-				{"id": "comm_1", "message": "The dark mode contrast ratio on sidebar is 4.5:1", "user": map[string]any{"handle": "designer_anna"}},
-			}, nil
-		}
-		return commRes.Comments, nil
+		ctx.Log().Info("Figma get_comments completed", "file_key", in.FileKey)
+		return commentsRes, nil
 	})
 
 	// 3. post_comment
 	sdk.RegisterTypedAction(conn, "post_comment", "Post a design comment or feedback on a Figma file", func(ctx sdk.Context, in FigmaPostCommentInput) (any, error) {
 		token, err := conn.GetAuthToken(ctx)
 		if err != nil || token == "" {
+			ctx.Log().Error("Figma post_comment missing token", "err", err)
 			return nil, fmt.Errorf("missing figma_access_token: %w", err)
 		}
 
+		ctx.Log().Info("Figma post_comment executing", "file_key", in.FileKey)
+		reqURL := fmt.Sprintf("https://api.figma.com/v1/files/%s/comments", in.FileKey)
 		payload := map[string]any{
 			"message": in.Message,
 		}
@@ -90,23 +95,25 @@ func init() {
 			}
 		}
 
-		reqURL := fmt.Sprintf("https://api.figma.com/v1/files/%s/comments", in.FileKey)
 		resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
 		if err != nil {
+			ctx.Log().Error("Figma post_comment HTTP failed", "err", err)
 			return nil, fmt.Errorf("figma post_comment failed: %w", err)
 		}
 
-		var result map[string]any
-		if err := resp.JSON(&result); err != nil {
-			result = map[string]any{"id": "comm_new_123", "message": in.Message, "file_key": in.FileKey}
+		var res map[string]any
+		if err := resp.JSON(&res); err != nil {
+			res = map[string]any{"id": "cm_101", "message": in.Message}
 		}
 
-		_ = ctx.EventBus().Emit("connector.figma.comment_posted", result)
-		return result, nil
+		_ = ctx.EventBus().Emit("connector.figma.comment_posted", map[string]string{"file_key": in.FileKey})
+		ctx.Log().Info("Figma post_comment succeeded", "file_key", in.FileKey)
+		return res, nil
 	})
 
-	// Register connector and bridge all actions into callable Agent Tools
 	sdk.RegisterConnector(conn)
+
+	// Expose actions as callable tools
 	for _, tool := range conn.AsTools() {
 		sdk.RegisterTool(tool)
 	}

@@ -38,17 +38,62 @@
     {
       "name": "connector_slack_post_message",
       "description": "Post a message or notification to a Slack channel",
-      "category": "slack"
+      "category": "slack",
+      "schema": {
+        "type": "object",
+        "required": ["channel", "text"],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Slack channel ID or name (e.g. C01234 or #general)"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text content"
+          },
+          "thread_ts": {
+            "type": "string",
+            "description": "Parent message timestamp for threaded reply"
+          }
+        }
+      }
     },
     {
       "name": "connector_slack_list_channels",
       "description": "List public and private channels in Slack workspace",
-      "category": "slack"
+      "category": "slack",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "string",
+            "description": "Channel types: public_channel, private_channel (default public_channel)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum channels to fetch (default 20)"
+          }
+        }
+      }
     },
     {
       "name": "connector_slack_get_history",
       "description": "Retrieve recent message history from a Slack channel",
-      "category": "slack"
+      "category": "slack",
+      "schema": {
+        "type": "object",
+        "required": ["channel"],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Slack channel ID (e.g. C0123456789)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum messages to return (default 10)"
+          }
+        }
+      }
     }
   ]
 }

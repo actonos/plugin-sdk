@@ -38,17 +38,63 @@
     {
       "name": "connector_figma_get_file",
       "description": "Retrieve Figma design file metadata and node tree",
-      "category": "figma"
+      "category": "figma",
+      "schema": {
+        "type": "object",
+        "required": ["file_key"],
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "Figma file key (e.g. 7X3sD8... from URL)"
+          },
+          "depth": {
+            "type": "integer",
+            "description": "Tree traversal depth limit (default 2)"
+          }
+        }
+      }
     },
     {
       "name": "connector_figma_get_comments",
       "description": "Get design comments and discussion threads from a Figma file",
-      "category": "figma"
+      "category": "figma",
+      "schema": {
+        "type": "object",
+        "required": ["file_key"],
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "Figma file key"
+          }
+        }
+      }
     },
     {
       "name": "connector_figma_post_comment",
       "description": "Post a design comment or feedback on a Figma file",
-      "category": "figma"
+      "category": "figma",
+      "schema": {
+        "type": "object",
+        "required": ["file_key", "message"],
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "Figma file key"
+          },
+          "message": {
+            "type": "string",
+            "description": "Comment message content"
+          },
+          "x": {
+            "type": "number",
+            "description": "X coordinate pin on canvas"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate pin on canvas"
+          }
+        }
+      }
     }
   ]
 }
