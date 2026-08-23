@@ -38,35 +38,38 @@ func (z *ZaloChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) erro
 		return fmt.Errorf("missing zalo_oa_access_token in vault: %w", err)
 	}
 
-	payload := map[string]any{
-		"recipient": map[string]string{
-			"user_id": msg.Recipient,
-		},
-		"message": map[string]string{
-			"text": msg.Content,
-		},
-	}
-
+	chunks := sdk.SplitMessage(msg.Content, 1900)
 	reqURL := "https://openapi.zalo.me/v3.0/oa/message/cs"
 	headers := map[string]string{
 		"access_token": token,
 		"Content-Type": "application/json",
 	}
 
-	resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, "", headers, payload)
-	if err != nil {
-		return fmt.Errorf("zalo send message failed: %w", err)
-	}
-	if resp.Status != 200 {
-		return fmt.Errorf("zalo API returned status %d: %s", resp.Status, resp.Body)
-	}
+	for i, chunk := range chunks {
+		payload := map[string]any{
+			"recipient": map[string]string{
+				"user_id": msg.Recipient,
+			},
+			"message": map[string]string{
+				"text": chunk,
+			},
+		}
 
-	var result struct {
-		Error   int    `json:"error"`
-		Message string `json:"message"`
-	}
-	if err := resp.JSON(&result); err == nil && result.Error != 0 {
-		return fmt.Errorf("zalo API error (%d): %s", result.Error, result.Message)
+		resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, "", headers, payload)
+		if err != nil {
+			return fmt.Errorf("zalo send message failed (chunk %d): %w", i+1, err)
+		}
+		if resp.Status != 200 {
+			return fmt.Errorf("zalo API returned status %d: %s", resp.Status, resp.Body)
+		}
+
+		var result struct {
+			Error   int    `json:"error"`
+			Message string `json:"message"`
+		}
+		if err := resp.JSON(&result); err == nil && result.Error != 0 {
+			return fmt.Errorf("zalo API error (%d): %s", result.Error, result.Message)
+		}
 	}
 
 	_ = ctx.EventBus().Emit("channel.zalo.sent", map[string]string{

@@ -50,32 +50,82 @@ func (c *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 	ctx.Log().Info("Dispatching outbound message via Telegram Bot", "chat_id", chatID)
 
 	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
-	payload := map[string]any{
-		"chat_id":    chatID,
-		"text":       msg.Content,
-		"parse_mode": "Markdown",
-	}
+	chunks := splitMessage(msg.Content, 4000)
 
-	resp, err := ctx.HTTP().PostJSON(reqURL, payload)
-	if err != nil {
-		return fmt.Errorf("calling telegram API sendMessage: %w", err)
-	}
+	for i, chunk := range chunks {
+		payload := map[string]any{
+			"chat_id":    chatID,
+			"text":       chunk,
+			"parse_mode": "Markdown",
+		}
 
-	// Retry without parse_mode if Markdown parsing failed
-	if resp.Status == 400 {
-		ctx.Log().Warn("Telegram markdown failed, retrying plain text", "body", resp.Body)
-		delete(payload, "parse_mode")
-		resp, err = ctx.HTTP().PostJSON(reqURL, payload)
+		resp, err := ctx.HTTP().PostJSON(reqURL, payload)
 		if err != nil {
-			return fmt.Errorf("calling telegram API retry: %w", err)
+			return fmt.Errorf("calling telegram API sendMessage (chunk %d): %w", i, err)
+		}
+
+		// Retry without parse_mode if Markdown parsing failed
+		if resp.Status == 400 {
+			ctx.Log().Warn("Telegram markdown failed, retrying plain text", "body", resp.Body)
+			delete(payload, "parse_mode")
+			resp, err = ctx.HTTP().PostJSON(reqURL, payload)
+			if err != nil {
+				return fmt.Errorf("calling telegram API retry: %w", err)
+			}
+		}
+
+		if resp.Status != 200 {
+			return fmt.Errorf("telegram API returned HTTP status %d: %s", resp.Status, resp.Body)
 		}
 	}
 
-	if resp.Status != 200 {
-		return fmt.Errorf("telegram API returned HTTP status %d: %s", resp.Status, resp.Body)
+	return nil
+}
+
+func splitMessage(text string, maxChunkSize int) []string {
+	if len([]rune(text)) <= maxChunkSize {
+		return []string{text}
 	}
 
-	return nil
+	runes := []rune(text)
+	var chunks []string
+
+	for len(runes) > 0 {
+		if len(runes) <= maxChunkSize {
+			chunks = append(chunks, string(runes))
+			break
+		}
+
+		splitIdx := maxChunkSize
+		foundBreak := false
+
+		minSearch := maxChunkSize - 500
+		if minSearch < 0 {
+			minSearch = 0
+		}
+		for i := maxChunkSize - 1; i >= minSearch; i-- {
+			if runes[i] == '\n' {
+				splitIdx = i + 1
+				foundBreak = true
+				break
+			}
+		}
+
+		if !foundBreak {
+			for i := maxChunkSize - 1; i >= minSearch; i-- {
+				if runes[i] == ' ' {
+					splitIdx = i + 1
+					foundBreak = true
+					break
+				}
+			}
+		}
+
+		chunks = append(chunks, string(runes[:splitIdx]))
+		runes = runes[splitIdx:]
+	}
+
+	return chunks
 }
 
 func (c *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/actonos/plugin-sdk/sdk"
 )
@@ -60,36 +61,52 @@ func (s *SlackChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) err
 		return fmt.Errorf("recipient or channel_id is required")
 	}
 
-	payload := map[string]any{
-		"channel": channelID,
-		"text":    msg.Content,
+	// Handle explicit reactions
+	if origTS, ok := msg.Metadata["reply_to_ts"]; ok && origTS != "" {
+		if reaction, ok := msg.Metadata["reaction"]; ok && reaction != "" {
+			addSlackReaction(ctx, token, channelID, origTS, reaction)
+		}
 	}
 
-	if threadTS, ok := msg.Metadata["thread_ts"]; ok && threadTS != "" {
-		payload["thread_ts"] = threadTS
-	}
+	chunks := sdk.SplitMessage(msg.Content, 3900)
+	var lastTS string
 
-	resp, err := ctx.HTTP().PostJSONWithBearer("https://slack.com/api/chat.postMessage", token, payload)
-	if err != nil {
-		return fmt.Errorf("slack chat.postMessage failed: %w", err)
-	}
-	if resp.Status != 200 {
-		return fmt.Errorf("slack API returned status %d: %s", resp.Status, resp.Body)
-	}
+	for i, chunk := range chunks {
+		payload := map[string]any{
+			"channel": channelID,
+			"text":    chunk,
+		}
 
-	var result struct {
-		OK    bool   `json:"ok"`
-		Error string `json:"error"`
-		TS    string `json:"ts"`
-	}
-	if err := resp.JSON(&result); err == nil && !result.OK {
-		return fmt.Errorf("slack API error: %s", result.Error)
+		if threadTS, ok := msg.Metadata["thread_ts"]; ok && threadTS != "" {
+			payload["thread_ts"] = threadTS
+		} else if replyToTS, ok := msg.Metadata["reply_to_ts"]; ok && replyToTS != "" {
+			payload["thread_ts"] = replyToTS
+		}
+
+		resp, err := ctx.HTTP().PostJSONWithBearer("https://slack.com/api/chat.postMessage", token, payload)
+		if err != nil {
+			return fmt.Errorf("slack chat.postMessage failed (chunk %d): %w", i+1, err)
+		}
+		if resp.Status != 200 {
+			return fmt.Errorf("slack API returned status %d: %s", resp.Status, resp.Body)
+		}
+
+		var result struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+			TS    string `json:"ts"`
+		}
+		if err := resp.JSON(&result); err == nil && !result.OK {
+			return fmt.Errorf("slack API error: %s", result.Error)
+		}
+		lastTS = result.TS
 	}
 
 	_ = ctx.EventBus().Emit("channel.slack.sent", map[string]string{
 		"account_id": accountID,
 		"channel_id": channelID,
-		"ts":         result.TS,
+		"ts":         lastTS,
+		"chunks":     strconv.Itoa(len(chunks)),
 	})
 	return nil
 }
@@ -175,6 +192,9 @@ func (s *SlackChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, erro
 
 			allInbound = append(allInbound, inbound)
 			_ = ctx.EventBus().Emit("channel.slack.received", inbound)
+
+			// Add 👀 emoji reaction to acknowledge prompt receipt
+			addSlackReaction(ctx, token, channelID, m.TS, "eyes")
 		}
 
 		if newestTS != lastTS && newestTS != "" {
@@ -185,6 +205,19 @@ func (s *SlackChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, erro
 	return allInbound, nil
 }
 
+// addSlackReaction attaches an emoji reaction to a message timestamp.
+func addSlackReaction(ctx sdk.Context, token, channelID, timestamp, name string) {
+	if token == "" || channelID == "" || timestamp == "" || name == "" {
+		return
+	}
+	payload := map[string]string{
+		"channel":   channelID,
+		"timestamp": timestamp,
+		"name":      name,
+	}
+	_, _ = ctx.HTTP().PostJSONWithBearer("https://slack.com/api/reactions.add", token, payload)
+}
+
 func getSlackBotToken(ctx sdk.Context, accountID string) (string, error) {
 	if accountID != "" && accountID != "default" {
 		if token, err := ctx.Vault().GetSecret("slack_bot_tokens." + accountID); err == nil && token != "" {
@@ -193,20 +226,31 @@ func getSlackBotToken(ctx sdk.Context, accountID string) (string, error) {
 		if token, err := ctx.Vault().GetSecret("slack_bot_token_" + accountID); err == nil && token != "" {
 			return token, nil
 		}
+		if token, err := ctx.Vault().GetSecret("accounts." + accountID + ".bot_token"); err == nil && token != "" {
+			return token, nil
+		}
 	}
 
-	token, err := ctx.Vault().GetSecret("slack_bot_token")
-	if err != nil || token == "" {
-		return "", fmt.Errorf("missing slack bot token for account %q in vault", accountID)
+	for _, k := range []string{"slack_bot_token", "bot_token", "token"} {
+		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
+			return token, nil
+		}
 	}
-	return token, nil
+
+	for _, k := range []string{"slack_bot_token", "bot_token", "token"} {
+		if token := ctx.Config().GetString(k, ""); token != "" {
+			return token, nil
+		}
+	}
+
+	return "", fmt.Errorf("missing slack bot token for account %q in vault or config", accountID)
 }
 
 func init() {
 	ch := &SlackChannel{
 		BaseChannel: sdk.BaseChannel{
 			ChannelName:        "slack",
-			ChannelDisplayName: "Slack Bot",
+			ChannelDisplayName: "Slack Workspace Bot",
 			PairingRequired:    true,
 		},
 	}

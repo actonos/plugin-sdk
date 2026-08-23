@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/actonos/plugin-sdk/sdk"
 )
@@ -23,48 +26,35 @@ type DiscordAccount struct {
 	DefaultAgent    string `json:"default_agent"`
 	ListenChannelID string `json:"listen_channel_id"`
 	EnableEmbeds    bool   `json:"enable_embeds"`
+	EnableReactions bool   `json:"enable_reactions"`
 }
 
 type DiscordChannel struct {
 	sdk.BaseChannel
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	wsConns map[string]sdk.WebSocketConn
 }
 
-// GatewayPayload defines the Discord Gateway WebSocket envelope.
 type GatewayPayload struct {
 	Op int             `json:"op"`
-	T  string          `json:"t,omitempty"` // Event name, e.g. "MESSAGE_CREATE"
-	S  *int64          `json:"s,omitempty"` // Sequence number
-	D  json.RawMessage `json:"d"`           // Event data
+	D  json.RawMessage `json:"d"`
+	T  string          `json:"t"`
 }
 
-type GatewayHello struct {
-	HeartbeatInterval int `json:"heartbeat_interval"`
-}
-
-type GatewayIdentify struct {
-	Token      string            `json:"token"`
-	Intents    int               `json:"intents"`
-	Properties GatewayProperties `json:"properties"`
-}
-
-type GatewayProperties struct {
-	OS      string `json:"os"`
-	Browser string `json:"browser"`
-	Device  string `json:"device"`
+type DiscordUser struct {
+	ID            string `json:"id"`
+	Username      string `json:"username"`
+	Discriminator string `json:"discriminator"`
+	Bot           bool   `json:"bot"`
 }
 
 type DiscordMessage struct {
-	ID        string `json:"id"`
-	ChannelID string `json:"channel_id"`
-	GuildID   string `json:"guild_id,omitempty"`
-	Content   string `json:"content"`
-	Author    struct {
-		ID       string `json:"id"`
-		Username string `json:"username"`
-		Bot      bool   `json:"bot"`
-	} `json:"author"`
+	ID        string      `json:"id"`
+	ChannelID string      `json:"channel_id"`
+	GuildID   string      `json:"guild_id"`
+	Author    DiscordUser `json:"author"`
+	Content   string      `json:"content"`
+	Type      int         `json:"type"`
 }
 
 func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
@@ -90,83 +80,91 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 		return fmt.Errorf("recipient or channel_id is required")
 	}
 
+	// 2. Handle explicit typing indicator
+	if msg.Metadata["typing"] == "true" || msg.Metadata["action"] == "typing" || msg.Content == "" {
+		sendDiscordTyping(ctx, token, channelID)
+		return nil
+	}
+
+	// 3. Handle reactions if specified
+	if origMsgID, ok := msg.Metadata["reply_to_msg_id"]; ok && origMsgID != "" {
+		if emoji, ok := msg.Metadata["reaction"]; ok && emoji != "" {
+			addDiscordReaction(ctx, token, channelID, origMsgID, emoji)
+		}
+	}
+
 	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", channelID)
-	payload := map[string]any{
-		"content": msg.Content,
-	}
+	chunks := sdk.SplitMessage(msg.Content, 1900)
 
-	if title, ok := msg.Metadata["embed_title"]; ok {
-		payload["embeds"] = []map[string]any{
-			{
-				"title":       title,
-				"description": msg.Content,
-				"color":       0x5865F2, // Discord Blurple
-			},
+	for i, chunk := range chunks {
+		payload := map[string]any{
+			"content": chunk,
 		}
-	}
 
-	authHeader := "Bot " + token
-	resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, authHeader, map[string]string{
-		"Content-Type": "application/json",
-	}, payload)
-	if err != nil {
-		return fmt.Errorf("discord sendMessage failed: %w", err)
-	}
-
-	// 2. If 404 (Unknown Channel - 10003), target might be a Direct Message (DM) User ID
-	if resp.Status == 404 && strings.Contains(resp.Body, "10003") && msg.Recipient != "" {
-		dmChannelID, dmErr := d.getOrCreateDMChannel(ctx, token, msg.Recipient)
-		if dmErr == nil && dmChannelID != "" {
-			dmURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", dmChannelID)
-			resp, err = ctx.HTTP().DoWithAuth("POST", dmURL, authHeader, map[string]string{
-				"Content-Type": "application/json",
-			}, payload)
-			if err != nil {
-				return fmt.Errorf("discord sendMessage DM failed: %w", err)
+		// Optional Rich Embed support
+		if i == 0 {
+			if title, ok := msg.Metadata["embed_title"]; ok && title != "" {
+				color := 0x5865F2 // Blurple
+				if cStr, ok := msg.Metadata["embed_color"]; ok {
+					if c, err := strconv.ParseInt(strings.TrimPrefix(cStr, "#"), 16, 64); err == nil {
+						color = int(c)
+					}
+				}
+				embed := map[string]any{
+					"title":       title,
+					"description": chunk,
+					"color":       color,
+					"footer": map[string]string{
+						"text": "ActonOS AI Swarm",
+					},
+					"timestamp": time.Now().UTC().Format(time.RFC3339),
+				}
+				if targetAgent, ok := msg.Metadata["agent"]; ok && targetAgent != "" {
+					embed["author"] = map[string]string{
+						"name": fmt.Sprintf("🤖 Agent: %s", targetAgent),
+					}
+				}
+				payload["embeds"] = []map[string]any{embed}
+				delete(payload, "content")
 			}
-			channelID = dmChannelID
 		}
-	}
 
-	if resp.Status < 200 || resp.Status >= 300 {
-		return fmt.Errorf("discord API returned HTTP status %d: %s", resp.Status, resp.Body)
+		authHeader := "Bot " + token
+		resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, authHeader, map[string]string{
+			"Content-Type": "application/json",
+		}, payload)
+		if err != nil {
+			return fmt.Errorf("discord sendMessage failed: %w", err)
+		}
+
+		// If 404 (Unknown Channel - 10003), target might be a Direct Message (DM) User ID
+		if resp.Status == 404 && strings.Contains(resp.Body, "10003") && msg.Recipient != "" {
+			dmChannelID, dmErr := d.getOrCreateDMChannel(ctx, token, msg.Recipient)
+			if dmErr == nil && dmChannelID != "" {
+				dmURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", dmChannelID)
+				resp, err = ctx.HTTP().DoWithAuth("POST", dmURL, authHeader, map[string]string{
+					"Content-Type": "application/json",
+				}, payload)
+				if err != nil {
+					return fmt.Errorf("discord sendMessage DM failed: %w", err)
+				}
+				channelID = dmChannelID
+				reqURL = dmURL
+			}
+		}
+
+		if resp.Status < 200 || resp.Status >= 300 {
+			return fmt.Errorf("discord API returned HTTP status %d: %s", resp.Status, resp.Body)
+		}
 	}
 
 	_ = ctx.EventBus().Emit("channel.discord.sent", map[string]string{
 		"account_id": accountID,
 		"channel_id": channelID,
 		"status":     "sent",
+		"chunks":     strconv.Itoa(len(chunks)),
 	})
 	return nil
-}
-
-func (d *DiscordChannel) getOrCreateDMChannel(ctx sdk.Context, token string, recipientID string) (string, error) {
-	cacheKey := "dm_chan_" + recipientID
-	if cachedID, ok, _ := ctx.Storage().Get(cacheKey); ok && cachedID != "" {
-		return cachedID, nil
-	}
-
-	authHeader := "Bot " + token
-	dmPayload := map[string]string{
-		"recipient_id": recipientID,
-	}
-
-	resp, err := ctx.HTTP().DoWithAuth("POST", "https://discord.com/api/v10/users/@me/channels", authHeader, map[string]string{
-		"Content-Type": "application/json",
-	}, dmPayload)
-	if err != nil || resp.Status < 200 || resp.Status >= 300 {
-		return "", fmt.Errorf("failed creating DM channel: status=%v", resp.Status)
-	}
-
-	var dmResp struct {
-		ID string `json:"id"`
-	}
-	if err := resp.JSON(&dmResp); err != nil || dmResp.ID == "" {
-		return "", fmt.Errorf("invalid DM channel response: %w", err)
-	}
-
-	_ = ctx.Storage().Set(cacheKey, dmResp.ID)
-	return dmResp.ID, nil
 }
 
 func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
@@ -175,12 +173,16 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 
 	accounts := cfg.Accounts
 	if len(accounts) == 0 {
+		defaultToken, _ := ctx.Vault().GetSecret("discord_bot_token")
+		if defaultToken == "" {
+			defaultToken = ctx.Config().GetString("discord_bot_token", "")
+		}
 		accounts = []DiscordAccount{
 			{
 				AccountID:       "default",
 				DisplayName:     "Default Discord Bot",
-				ListenChannelID: "default",
-				EnableEmbeds:    true,
+				BotToken:        defaultToken,
+				EnableReactions: true,
 			},
 		}
 	}
@@ -238,21 +240,19 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 		case 10: // HELLO -> Send IDENTIFY
 			identifyPayload := GatewayPayload{
 				Op: 2, // IDENTIFY
+				D: json.RawMessage(fmt.Sprintf(`{
+					"token": "%s",
+					"intents": 33280,
+					"properties": {
+						"os": "actonos",
+						"browser": "actonos-plugin",
+						"device": "actonos-plugin"
+					}
+				}`, token)),
 			}
-			identifyData := GatewayIdentify{
-				Token:   token,
-				Intents: 37377, // GUILDS (1) | GUILD_MESSAGES (512) | DIRECT_MESSAGES (4096) | MESSAGE_CONTENT (32768)
-				Properties: GatewayProperties{
-					OS:      "actonos",
-					Browser: "actonos-plugin",
-					Device:  "actonos-plugin",
-				},
-			}
-			b, _ := json.Marshal(identifyData)
-			identifyPayload.D = json.RawMessage(b)
 			_ = conn.SendJSON(identifyPayload)
 
-		case 0: // DISPATCH -> Event received
+		case 0: // DISPATCH -> Process MESSAGE_CREATE events
 			if payload.T == "MESSAGE_CREATE" {
 				var msg DiscordMessage
 				if err := json.Unmarshal(payload.D, &msg); err == nil && !msg.Author.Bot {
@@ -275,6 +275,12 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 
 					messages = append(messages, inbound)
 					_ = ctx.EventBus().Emit("channel.discord.received", inbound)
+
+					// 1. Trigger live typing indicator so Discord shows "[Bot] is typing..."
+					sendDiscordTyping(ctx, token, msg.ChannelID)
+
+					// 2. React with 👀 emoji to acknowledge prompt receipt
+					addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, "👀")
 				}
 			}
 
@@ -360,6 +366,12 @@ func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc Dis
 
 		inboundMsgs = append(inboundMsgs, inbound)
 		_ = ctx.EventBus().Emit("channel.discord.received", inbound)
+
+		// 1. Trigger live typing indicator
+		sendDiscordTyping(ctx, token, msg.ChannelID)
+
+		// 2. React with 👀
+		addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, "👀")
 	}
 
 	if newestID != lastMsgID && newestID != "" {
@@ -367,6 +379,29 @@ func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc Dis
 	}
 
 	return inboundMsgs, nil
+}
+
+// sendDiscordTyping triggers the "[Bot] is typing..." status on Discord.
+func sendDiscordTyping(ctx sdk.Context, token string, channelID string) {
+	if token == "" || channelID == "" {
+		return
+	}
+	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/typing", channelID)
+	authHeader := "Bot " + token
+	_, _ = ctx.HTTP().DoWithAuth("POST", reqURL, authHeader, map[string]string{
+		"Content-Type": "application/json",
+	}, nil)
+}
+
+// addDiscordReaction adds an emoji reaction to a specific Discord message.
+func addDiscordReaction(ctx sdk.Context, token string, channelID string, messageID string, emoji string) {
+	if token == "" || channelID == "" || messageID == "" || emoji == "" {
+		return
+	}
+	encodedEmoji := url.PathEscape(emoji)
+	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages/%s/reactions/%s/@me", channelID, messageID, encodedEmoji)
+	authHeader := "Bot " + token
+	_, _ = ctx.HTTP().DoWithAuth("PUT", reqURL, authHeader, nil, nil)
 }
 
 func getBotToken(ctx sdk.Context, accountID string) (string, error) {
@@ -377,33 +412,77 @@ func getBotToken(ctx sdk.Context, accountID string) (string, error) {
 		if token, err := ctx.Vault().GetSecret("discord_bot_token_" + accountID); err == nil && token != "" {
 			return token, nil
 		}
-	}
-
-	token, err := ctx.Vault().GetSecret("discord_bot_token")
-	if err != nil || token == "" {
-		return "", fmt.Errorf("missing discord bot token for account %q in vault", accountID)
-	}
-	return token, nil
-}
-
-func cleanDiscordMentions(content string) string {
-	trimmed := strings.TrimSpace(content)
-	for strings.HasPrefix(trimmed, "<@") {
-		idx := strings.Index(trimmed, ">")
-		if idx != -1 {
-			trimmed = strings.TrimSpace(trimmed[idx+1:])
-		} else {
-			break
+		if token, err := ctx.Vault().GetSecret("accounts." + accountID + ".bot_token"); err == nil && token != "" {
+			return token, nil
 		}
 	}
-	return trimmed
+
+	for _, k := range []string{"discord_bot_token", "bot_token", "token"} {
+		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
+			return token, nil
+		}
+	}
+
+	for _, k := range []string{"discord_bot_token", "bot_token", "token"} {
+		if token := ctx.Config().GetString(k, ""); token != "" {
+			return token, nil
+		}
+	}
+
+	return "", fmt.Errorf("missing discord bot token for account %q in vault or config", accountID)
+}
+
+func (d *DiscordChannel) getOrCreateDMChannel(ctx sdk.Context, token string, recipientID string) (string, error) {
+	cacheKey := "dm_chan_" + recipientID
+	if cachedID, ok, _ := ctx.Storage().Get(cacheKey); ok && cachedID != "" {
+		return cachedID, nil
+	}
+
+	reqURL := "https://discord.com/api/v10/users/@me/channels"
+	authHeader := "Bot " + token
+	payload := map[string]string{
+		"recipient_id": recipientID,
+	}
+
+	resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, authHeader, map[string]string{
+		"Content-Type": "application/json",
+	}, payload)
+	if err != nil {
+		return "", fmt.Errorf("creating DM channel: %w", err)
+	}
+
+	if resp.Status < 200 || resp.Status >= 300 {
+		return "", fmt.Errorf("DM channel creation failed status %d: %s", resp.Status, resp.Body)
+	}
+
+	var dmResp struct {
+		ID string `json:"id"`
+	}
+	if err := resp.JSON(&dmResp); err != nil || dmResp.ID == "" {
+		return "", fmt.Errorf("parsing DM channel response: %w", err)
+	}
+
+	_ = ctx.Storage().Set(cacheKey, dmResp.ID)
+	return dmResp.ID, nil
+}
+
+func cleanDiscordMentions(raw string) string {
+	parts := strings.Fields(raw)
+	var clean []string
+	for _, p := range parts {
+		if strings.HasPrefix(p, "<@") && strings.HasSuffix(p, ">") {
+			continue
+		}
+		clean = append(clean, p)
+	}
+	return strings.Join(clean, " ")
 }
 
 func init() {
 	ch := &DiscordChannel{
 		BaseChannel: sdk.BaseChannel{
 			ChannelName:        "discord",
-			ChannelDisplayName: "Discord Bot Gateway",
+			ChannelDisplayName: "Discord Bot (Gateway & REST)",
 			PairingRequired:    true,
 		},
 		wsConns: make(map[string]sdk.WebSocketConn),

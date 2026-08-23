@@ -14,15 +14,17 @@ type TelegramConfig struct {
 	BotToken            string            `json:"bot_token"`
 	DefaultAgent        string            `json:"default_agent"`
 	PollIntervalSeconds int               `json:"poll_interval_seconds"`
+	EnableReactions     bool              `json:"enable_reactions"`
 	Accounts            []TelegramAccount `json:"accounts"`
 }
 
 // TelegramAccount represents an individual configured Telegram bot instance.
 type TelegramAccount struct {
-	AccountID    string `json:"account_id"`
-	DisplayName  string `json:"display_name"`
-	BotToken     string `json:"bot_token,omitempty"`
-	DefaultAgent string `json:"default_agent"`
+	AccountID       string `json:"account_id"`
+	DisplayName     string `json:"display_name"`
+	BotToken        string `json:"bot_token,omitempty"`
+	DefaultAgent    string `json:"default_agent"`
+	EnableReactions bool   `json:"enable_reactions"`
 }
 
 type TelegramChannel struct {
@@ -76,46 +78,75 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 		return fmt.Errorf("recipient or chat_id is required")
 	}
 
-	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
-	payload := map[string]any{
-		"chat_id": chatID,
-		"text":    msg.Content,
+	// 1. Handle explicit typing indicators or chat actions
+	if msg.Metadata["typing"] == "true" || msg.Metadata["action"] != "" || msg.Content == "" {
+		action := msg.Metadata["action"]
+		if action == "" {
+			action = "typing"
+		}
+		sendTelegramChatAction(ctx, token, chatID, action)
+		return nil
 	}
 
-	if parseMode, ok := msg.Metadata["parse_mode"]; ok && parseMode != "" {
-		payload["parse_mode"] = parseMode
-	}
+	// 2. Handle reaction updates on the original message if specified
 	if replyTo, ok := msg.Metadata["reply_to_msg_id"]; ok && replyTo != "" {
-		if id, err := strconv.Atoi(replyTo); err == nil {
-			payload["reply_to_message_id"] = id
+		if reaction, ok := msg.Metadata["reaction"]; ok && reaction != "" {
+			if msgID, err := strconv.Atoi(replyTo); err == nil {
+				setTelegramReaction(ctx, token, chatID, msgID, reaction)
+			}
 		}
 	}
 
-	resp, err := ctx.HTTP().PostJSON(reqURL, payload)
-	if err != nil {
-		ctx.Log().Error("Telegram sendMessage network error", "chat_id", chatID, "err", err)
-		return fmt.Errorf("telegram sendMessage API failed: %w", err)
-	}
+	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
+	chunks := sdk.SplitMessage(msg.Content, 3900)
 
-	// If Markdown parse error (400 Bad Request), retry as plain text
-	if resp.Status == 400 && payload["parse_mode"] != nil {
-		ctx.Log().Warn("Telegram markdown parse failed, retrying plain text", "body", resp.Body)
-		delete(payload, "parse_mode")
-		resp, err = ctx.HTTP().PostJSON(reqURL, payload)
+	for i, chunk := range chunks {
+		payload := map[string]any{
+			"chat_id": chatID,
+			"text":    chunk,
+		}
+
+		if parseMode, ok := msg.Metadata["parse_mode"]; ok && parseMode != "" {
+			payload["parse_mode"] = parseMode
+		} else {
+			payload["parse_mode"] = "Markdown"
+		}
+
+		if i == 0 {
+			if replyTo, ok := msg.Metadata["reply_to_msg_id"]; ok && replyTo != "" {
+				if id, err := strconv.Atoi(replyTo); err == nil {
+					payload["reply_to_message_id"] = id
+				}
+			}
+		}
+
+		resp, err := ctx.HTTP().PostJSON(reqURL, payload)
 		if err != nil {
-			return fmt.Errorf("telegram sendMessage plain retry failed: %w", err)
+			ctx.Log().Error("Telegram sendMessage network error", "chat_id", chatID, "chunk", i+1, "err", err)
+			return fmt.Errorf("telegram sendMessage API failed: %w", err)
 		}
-	}
 
-	if resp.Status != 200 {
-		ctx.Log().Error("Telegram API returned error status", "status", resp.Status, "body", resp.Body)
-		return fmt.Errorf("telegram API returned HTTP status %d: %s", resp.Status, resp.Body)
+		// If Markdown parse error (400 Bad Request), gracefully retry as plain text
+		if resp.Status == 400 && payload["parse_mode"] != nil {
+			ctx.Log().Warn("Telegram markdown parse failed, retrying plain text", "body", resp.Body)
+			delete(payload, "parse_mode")
+			resp, err = ctx.HTTP().PostJSON(reqURL, payload)
+			if err != nil {
+				return fmt.Errorf("telegram sendMessage plain retry failed: %w", err)
+			}
+		}
+
+		if resp.Status != 200 {
+			ctx.Log().Error("Telegram API returned error status", "status", resp.Status, "body", resp.Body)
+			return fmt.Errorf("telegram API returned HTTP status %d: %s", resp.Status, resp.Body)
+		}
 	}
 
 	_ = ctx.EventBus().Emit("channel.telegram.sent", map[string]string{
 		"account_id": accountID,
 		"chat_id":    chatID,
 		"status":     "sent",
+		"chunks":     strconv.Itoa(len(chunks)),
 	})
 	return nil
 }
@@ -132,10 +163,11 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 		}
 		accounts = []TelegramAccount{
 			{
-				AccountID:    "default",
-				DisplayName:  "Default Telegram Bot",
-				BotToken:     defaultToken,
-				DefaultAgent: cfg.DefaultAgent,
+				AccountID:       "default",
+				DisplayName:     "Default Telegram Bot",
+				BotToken:        defaultToken,
+				DefaultAgent:    cfg.DefaultAgent,
+				EnableReactions: cfg.EnableReactions,
 			},
 		}
 	}
@@ -227,6 +259,12 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 				allInbound = append(allInbound, inbound)
 				_ = ctx.EventBus().Emit("channel.telegram.received", inbound)
 				ctx.Log().Info("Telegram message received", "from", senderName, "chat_id", inbound.Metadata["chat_id"], "target_agent", targetAgent)
+
+				// 1. Trigger live typing indicator so the user immediately sees "... is typing"
+				sendTelegramChatAction(ctx, token, inbound.Metadata["chat_id"], "typing")
+
+				// 2. React with 👀 emoji to acknowledge receipt of the prompt
+				setTelegramReaction(ctx, token, inbound.Metadata["chat_id"], update.Message.MessageID, "👀")
 			}
 		}
 
@@ -236,6 +274,40 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	}
 
 	return allInbound, nil
+}
+
+// sendTelegramChatAction triggers visual actions in Telegram (typing, upload_document, upload_photo).
+func sendTelegramChatAction(ctx sdk.Context, token, chatID, action string) {
+	if token == "" || chatID == "" {
+		return
+	}
+	if action == "" {
+		action = "typing"
+	}
+	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendChatAction", token)
+	_, _ = ctx.HTTP().PostJSON(reqURL, map[string]string{
+		"chat_id": chatID,
+		"action":  action,
+	})
+}
+
+// setTelegramReaction sets an emoji reaction on a message (e.g. 👀, 👍, ⚡, ✅).
+func setTelegramReaction(ctx sdk.Context, token, chatID string, messageID int, emoji string) {
+	if token == "" || chatID == "" || messageID == 0 || emoji == "" {
+		return
+	}
+	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/setMessageReaction", token)
+	payload := map[string]any{
+		"chat_id":    chatID,
+		"message_id": messageID,
+		"reaction": []map[string]string{
+			{
+				"type":  "emoji",
+				"emoji": emoji,
+			},
+		},
+	}
+	_, _ = ctx.HTTP().PostJSON(reqURL, payload)
 }
 
 func getTelegramBotToken(ctx sdk.Context, acc TelegramAccount) (string, error) {

@@ -67,22 +67,26 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 	}
 
 	reqURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/messages", phoneID)
-	payload := map[string]any{
-		"messaging_product": "whatsapp",
-		"recipient_type":    "individual",
-		"to":                recipient,
-		"type":              "text",
-		"text": map[string]string{
-			"body": msg.Content,
-		},
-	}
+	chunks := sdk.SplitMessage(msg.Content, 3900)
 
-	resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
-	if err != nil {
-		return fmt.Errorf("whatsapp send message failed: %w", err)
-	}
-	if resp.Status < 200 || resp.Status >= 300 {
-		return fmt.Errorf("whatsapp API returned status %d: %s", resp.Status, resp.Body)
+	for i, chunk := range chunks {
+		payload := map[string]any{
+			"messaging_product": "whatsapp",
+			"recipient_type":    "individual",
+			"to":                recipient,
+			"type":              "text",
+			"text": map[string]string{
+				"body": chunk,
+			},
+		}
+
+		resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
+		if err != nil {
+			return fmt.Errorf("whatsapp send message failed (chunk %d): %w", i+1, err)
+		}
+		if resp.Status < 200 || resp.Status >= 300 {
+			return fmt.Errorf("whatsapp API returned status %d: %s", resp.Status, resp.Body)
+		}
 	}
 
 	_ = ctx.EventBus().Emit("channel.whatsapp.sent", map[string]string{
