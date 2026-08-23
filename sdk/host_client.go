@@ -10,6 +10,7 @@ import (
 
 type defaultContext struct {
 	http     HTTPClient
+	ws       WebSocketClient
 	config   ConfigStore
 	vault    VaultClient
 	storage  KVStorage
@@ -22,6 +23,7 @@ func NewContext() Context {
 	storage := &defaultKVStorage{}
 	return &defaultContext{
 		http:     &defaultHTTPClient{},
+		ws:       &defaultWebSocketClient{},
 		config:   &defaultConfigStore{storage: storage},
 		vault:    &defaultVaultClient{},
 		storage:  storage,
@@ -31,6 +33,7 @@ func NewContext() Context {
 }
 
 func (c *defaultContext) HTTP() HTTPClient     { return c.http }
+func (c *defaultContext) WS() WebSocketClient  { return c.ws }
 func (c *defaultContext) Config() ConfigStore   { return c.config }
 func (c *defaultContext) Vault() VaultClient   { return c.vault }
 func (c *defaultContext) Storage() KVStorage   { return c.storage }
@@ -165,6 +168,109 @@ func (h *defaultHTTPClient) Do(req HTTPRequest) (*HTTPResponse, error) {
 		return nil, fmt.Errorf("parsing http response JSON: %w (raw: %s)", err, string(resBytes))
 	}
 	return &resp, nil
+}
+
+// --- WebSocket Client Implementation ---
+
+type defaultWebSocketClient struct{}
+
+func (w *defaultWebSocketClient) Dial(url string, headers map[string]string) (WebSocketConn, error) {
+	if url == "" {
+		return nil, fmt.Errorf("websocket url cannot be empty")
+	}
+
+	urlPtr, urlLen := abi.StringToPtr(url)
+	defer abi.Free(urlPtr, urlLen)
+
+	var hPtr, hLen uint32
+	if len(headers) > 0 {
+		hBytes, err := json.Marshal(headers)
+		if err == nil && len(hBytes) > 0 {
+			hPtr, hLen = abi.BytesToPtr(hBytes)
+			defer abi.Free(hPtr, hLen)
+		}
+	}
+
+	handleID := abi.WSConnect(urlPtr, urlLen, hPtr, hLen)
+	if handleID < 0 {
+		return nil, fmt.Errorf("websocket connect failed (handle=%d)", handleID)
+	}
+
+	return &defaultWebSocketConn{handleID: handleID}, nil
+}
+
+type defaultWebSocketConn struct {
+	handleID int32
+}
+
+func (c *defaultWebSocketConn) HandleID() int32 {
+	return c.handleID
+}
+
+func (c *defaultWebSocketConn) SendText(message string) error {
+	msgPtr, msgLen := abi.StringToPtr(message)
+	defer abi.Free(msgPtr, msgLen)
+
+	code := abi.WSSend(c.handleID, 1, msgPtr, msgLen)
+	if code != 0 {
+		return fmt.Errorf("websocket send_text failed with code: %d", code)
+	}
+	return nil
+}
+
+func (c *defaultWebSocketConn) SendBinary(data []byte) error {
+	dataPtr, dataLen := abi.BytesToPtr(data)
+	defer abi.Free(dataPtr, dataLen)
+
+	code := abi.WSSend(c.handleID, 2, dataPtr, dataLen)
+	if code != 0 {
+		return fmt.Errorf("websocket send_binary failed with code: %d", code)
+	}
+	return nil
+}
+
+func (c *defaultWebSocketConn) SendJSON(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("serializing websocket json payload: %w", err)
+	}
+	return c.SendText(string(b))
+}
+
+func (c *defaultWebSocketConn) Poll() ([]byte, bool, error) {
+	resLen := abi.WSPoll(c.handleID)
+	if resLen < 0 {
+		return nil, false, fmt.Errorf("websocket connection closed or invalid handle")
+	}
+	if resLen == 0 {
+		return nil, false, nil
+	}
+
+	destBuf := make([]byte, resLen)
+	destPtr, _ := abi.BytesToPtr(destBuf)
+	defer abi.Free(destPtr, uint32(resLen))
+
+	abi.SysReadResponse(destPtr, uint32(resLen))
+	return abi.PtrToBytes(destPtr, uint32(resLen)), true, nil
+}
+
+func (c *defaultWebSocketConn) PollJSON(target any) (bool, error) {
+	data, ok, err := c.Poll()
+	if err != nil || !ok {
+		return ok, err
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		return true, fmt.Errorf("deserializing websocket message json: %w", err)
+	}
+	return true, nil
+}
+
+func (c *defaultWebSocketConn) Close() error {
+	code := abi.WSClose(c.handleID)
+	if code != 0 {
+		return fmt.Errorf("websocket close failed with code: %d", code)
+	}
+	return nil
 }
 
 // --- Config Store Implementation ---

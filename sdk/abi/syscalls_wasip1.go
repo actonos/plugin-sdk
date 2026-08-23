@@ -41,3 +41,24 @@ func StorageKVDelete(keyPtr uint32, keyLen uint32) int32
 //
 //go:wasmimport acton_bus emit_event
 func BusEmitEvent(topicPtr uint32, topicLen uint32, payloadPtr uint32, payloadLen uint32) int32
+
+// WSConnect establishes a WebSocket connection and returns a connection handle ID (or -1 on error).
+//
+//go:wasmimport acton_ws ws_connect
+func WSConnect(urlPtr, urlLen, headersPtr, headersLen uint32) int32
+
+// WSSend transmits a text (msgType=1) or binary (msgType=2) message over the WebSocket connection.
+//
+//go:wasmimport acton_ws ws_send
+func WSSend(handleID int32, msgType int32, dataPtr, dataLen uint32) int32
+
+// WSPoll checks for incoming messages on the WebSocket connection and returns byte length (0 if empty, -1 if closed/error).
+//
+//go:wasmimport acton_ws ws_poll
+func WSPoll(handleID int32) int32
+
+// WSClose closes the WebSocket connection.
+//
+//go:wasmimport acton_ws ws_close
+func WSClose(handleID int32) int32
+

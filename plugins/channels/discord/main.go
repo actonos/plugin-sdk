@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/actonos/plugin-sdk/sdk"
 )
@@ -25,11 +27,38 @@ type DiscordAccount struct {
 
 type DiscordChannel struct {
 	sdk.BaseChannel
+	mu      sync.RWMutex
+	wsConns map[string]sdk.WebSocketConn
+}
+
+// GatewayPayload defines the Discord Gateway WebSocket envelope.
+type GatewayPayload struct {
+	Op int             `json:"op"`
+	T  string          `json:"t,omitempty"` // Event name, e.g. "MESSAGE_CREATE"
+	S  *int64          `json:"s,omitempty"` // Sequence number
+	D  json.RawMessage `json:"d"`           // Event data
+}
+
+type GatewayHello struct {
+	HeartbeatInterval int `json:"heartbeat_interval"`
+}
+
+type GatewayIdentify struct {
+	Token      string            `json:"token"`
+	Intents    int               `json:"intents"`
+	Properties GatewayProperties `json:"properties"`
+}
+
+type GatewayProperties struct {
+	OS      string `json:"os"`
+	Browser string `json:"browser"`
+	Device  string `json:"device"`
 }
 
 type DiscordMessage struct {
 	ID        string `json:"id"`
 	ChannelID string `json:"channel_id"`
+	GuildID   string `json:"guild_id,omitempty"`
 	Content   string `json:"content"`
 	Author    struct {
 		ID       string `json:"id"`
@@ -98,7 +127,6 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 	var cfg DiscordConfig
 	_ = ctx.Config().Bind(&cfg)
 
-	// Fallback to default account if no accounts are explicitly defined
 	accounts := cfg.Accounts
 	if len(accounts) == 0 {
 		accounts = []DiscordAccount{
@@ -116,23 +144,125 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 	for _, acc := range accounts {
 		token, err := getBotToken(ctx, acc.AccountID)
 		if err != nil || token == "" {
-			ctx.Log().Warn("Skipping Discord account due to missing token", "account_id", acc.AccountID, "err", err)
 			continue
 		}
 
-		msgs, err := d.pollAccountMessages(ctx, token, acc)
-		if err != nil {
-			ctx.Log().Error("Failed polling messages for Discord account", "account_id", acc.AccountID, "err", err)
-			continue
-		}
+		// 1. Process real-time events from Discord Gateway WebSocket via ctx.WS()
+		wsMsgs := d.pollGatewayWebSocket(ctx, acc, token)
+		allInbound = append(allInbound, wsMsgs...)
 
-		allInbound = append(allInbound, msgs...)
+		// 2. HTTP Polling fallback if needed
+		httpMsgs, err := d.pollHTTPMessages(ctx, token, acc)
+		if err == nil && len(httpMsgs) > 0 {
+			allInbound = append(allInbound, httpMsgs...)
+		}
 	}
 
 	return allInbound, nil
 }
 
-func (d *DiscordChannel) pollAccountMessages(ctx sdk.Context, token string, acc DiscordAccount) ([]sdk.InboundMessage, error) {
+func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccount, token string) []sdk.InboundMessage {
+	conn, err := d.getOrDialGateway(ctx, acc.AccountID)
+	if err != nil || conn == nil {
+		return nil
+	}
+
+	var messages []sdk.InboundMessage
+
+	// Read pending WebSocket frames from Gateway stream
+	for {
+		rawBytes, hasMsg, err := conn.Poll()
+		if err != nil {
+			// Connection closed or broken -> cleanup for reconnection
+			d.mu.Lock()
+			delete(d.wsConns, acc.AccountID)
+			d.mu.Unlock()
+			break
+		}
+		if !hasMsg || len(rawBytes) == 0 {
+			break
+		}
+
+		var payload GatewayPayload
+		if err := json.Unmarshal(rawBytes, &payload); err != nil {
+			continue
+		}
+
+		switch payload.Op {
+		case 10: // HELLO -> Send IDENTIFY
+			identifyPayload := GatewayPayload{
+				Op: 2, // IDENTIFY
+			}
+			identifyData := GatewayIdentify{
+				Token:   token,
+				Intents: 37377, // GUILDS (1) | GUILD_MESSAGES (512) | DIRECT_MESSAGES (4096) | MESSAGE_CONTENT (32768)
+				Properties: GatewayProperties{
+					OS:      "actonos",
+					Browser: "actonos-plugin",
+					Device:  "actonos-plugin",
+				},
+			}
+			b, _ := json.Marshal(identifyData)
+			identifyPayload.D = json.RawMessage(b)
+			_ = conn.SendJSON(identifyPayload)
+
+		case 0: // DISPATCH -> Event received
+			if payload.T == "MESSAGE_CREATE" {
+				var msg DiscordMessage
+				if err := json.Unmarshal(payload.D, &msg); err == nil && !msg.Author.Bot {
+					cleanContent := cleanDiscordMentions(msg.Content)
+					inbound := sdk.NewInboundMessage(
+						"discord",
+						acc.AccountID,
+						msg.Author.ID,
+						msg.Author.Username,
+						cleanContent,
+					)
+					inbound.Metadata["channel_id"] = msg.ChannelID
+					inbound.Metadata["guild_id"] = msg.GuildID
+					inbound.Metadata["message_id"] = msg.ID
+					inbound.Metadata["account_id"] = acc.AccountID
+
+					if inbound.TargetAgent == "" && acc.DefaultAgent != "" {
+						inbound.TargetAgent = acc.DefaultAgent
+					}
+
+					messages = append(messages, inbound)
+					_ = ctx.EventBus().Emit("channel.discord.received", inbound)
+				}
+			}
+
+		case 1: // HEARTBEAT requested -> Reply with Opcode 1
+			_ = conn.SendJSON(map[string]any{"op": 1, "d": nil})
+		}
+	}
+
+	return messages
+}
+
+func (d *DiscordChannel) getOrDialGateway(ctx sdk.Context, accountID string) (sdk.WebSocketConn, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.wsConns == nil {
+		d.wsConns = make(map[string]sdk.WebSocketConn)
+	}
+
+	if conn, exists := d.wsConns[accountID]; exists && conn != nil {
+		return conn, nil
+	}
+
+	gatewayURL := "wss://gateway.discord.gg/?v=10&encoding=json"
+	conn, err := ctx.WS().Dial(gatewayURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	d.wsConns[accountID] = conn
+	return conn, nil
+}
+
+func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc DiscordAccount) ([]sdk.InboundMessage, error) {
 	listenChannelID := acc.ListenChannelID
 	if listenChannelID == "" {
 		listenChannelID = "default"
@@ -148,13 +278,13 @@ func (d *DiscordChannel) pollAccountMessages(ctx sdk.Context, token string, acc 
 
 	authHeader := "Bot " + token
 	resp, err := ctx.HTTP().DoWithAuth("GET", reqURL, authHeader, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("discord getMessages failed: %w", err)
+	if err != nil || resp == nil || resp.Status < 200 || resp.Status >= 300 {
+		return nil, err
 	}
 
 	var messages []DiscordMessage
 	if err := resp.JSON(&messages); err != nil {
-		return nil, fmt.Errorf("parsing discord messages: %w", err)
+		return nil, err
 	}
 
 	var inboundMsgs []sdk.InboundMessage
@@ -178,7 +308,6 @@ func (d *DiscordChannel) pollAccountMessages(ctx sdk.Context, token string, acc 
 		inbound.Metadata["message_id"] = msg.ID
 		inbound.Metadata["account_id"] = acc.AccountID
 
-		// If no explicit @agent mention was found in text, fallback to account's DefaultAgent
 		if inbound.TargetAgent == "" && acc.DefaultAgent != "" {
 			inbound.TargetAgent = acc.DefaultAgent
 		}
@@ -195,7 +324,6 @@ func (d *DiscordChannel) pollAccountMessages(ctx sdk.Context, token string, acc 
 }
 
 func getBotToken(ctx sdk.Context, accountID string) (string, error) {
-	// 1. Try account-specific scoped vault keys
 	if accountID != "" && accountID != "default" {
 		if token, err := ctx.Vault().GetSecret("discord_bot_tokens." + accountID); err == nil && token != "" {
 			return token, nil
@@ -205,7 +333,6 @@ func getBotToken(ctx sdk.Context, accountID string) (string, error) {
 		}
 	}
 
-	// 2. Fallback to default vault secret
 	token, err := ctx.Vault().GetSecret("discord_bot_token")
 	if err != nil || token == "" {
 		return "", fmt.Errorf("missing discord bot token for account %q in vault", accountID)
@@ -215,7 +342,6 @@ func getBotToken(ctx sdk.Context, accountID string) (string, error) {
 
 func cleanDiscordMentions(content string) string {
 	trimmed := strings.TrimSpace(content)
-	// Strip <@!123456789> or <@123456789> tags
 	for strings.HasPrefix(trimmed, "<@") {
 		idx := strings.Index(trimmed, ">")
 		if idx != -1 {
@@ -234,6 +360,7 @@ func init() {
 			ChannelDisplayName: "Discord Bot Gateway",
 			PairingRequired:    true,
 		},
+		wsConns: make(map[string]sdk.WebSocketConn),
 	}
 	sdk.RegisterChannel(ch)
 }

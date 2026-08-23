@@ -5,6 +5,9 @@ type Context interface {
 	// HTTP returns the sandboxed outbound HTTP client.
 	HTTP() HTTPClient
 
+	// WS returns the sandboxed WebSocket client.
+	WS() WebSocketClient
+
 	// Config provides access to structured user-configured settings.
 	Config() ConfigStore
 
@@ -19,6 +22,36 @@ type Context interface {
 
 	// Log provides structured logging to ActonOS daemon.
 	Log() Logger
+}
+
+// WebSocketClient establishes sandboxed WebSocket connections managed by Host daemon.
+type WebSocketClient interface {
+	// Dial connects to a WebSocket endpoint.
+	Dial(url string, headers map[string]string) (WebSocketConn, error)
+}
+
+// WebSocketConn represents an active WebSocket connection.
+type WebSocketConn interface {
+	// SendText sends a text message.
+	SendText(message string) error
+
+	// SendBinary sends binary payload.
+	SendBinary(data []byte) error
+
+	// SendJSON serializes and sends a JSON payload.
+	SendJSON(v any) error
+
+	// Poll checks for incoming messages without blocking. Returns (payload, hasMessage, error).
+	Poll() ([]byte, bool, error)
+
+	// PollJSON attempts to deserialize the next pending message. Returns (hasMessage, error).
+	PollJSON(target any) (bool, error)
+
+	// Close terminates the WebSocket connection.
+	Close() error
+
+	// HandleID returns the raw connection handle ID assigned by Host.
+	HandleID() int32
 }
 
 // ConfigStore provides typed access to user-configured plugin settings defined in manifest.

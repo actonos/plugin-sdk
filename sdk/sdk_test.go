@@ -297,3 +297,38 @@ func TestAgentMentionExtraction(t *testing.T) {
 	}
 }
 
+func TestWebSocketClient(t *testing.T) {
+	ctx := sdk.NewContext()
+
+	conn, err := ctx.WS().Dial("wss://gateway.discord.gg/?v=10&encoding=json", map[string]string{
+		"User-Agent": "ActonOS-Bot",
+	})
+	if err != nil {
+		t.Fatalf("failed dialing websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if conn.HandleID() <= 0 {
+		t.Errorf("expected positive handleID, got %d", conn.HandleID())
+	}
+
+	// Send message
+	if err := conn.SendText(`{"op":1,"d":null}`); err != nil {
+		t.Fatalf("failed sending text message: %v", err)
+	}
+
+	if err := conn.SendJSON(map[string]any{"op": 2, "token": "mock_token"}); err != nil {
+		t.Fatalf("failed sending json message: %v", err)
+	}
+
+	// Poll message (empty queue)
+	payload, ok, err := conn.Poll()
+	if err != nil {
+		t.Fatalf("poll error: %v", err)
+	}
+	if ok || payload != nil {
+		t.Errorf("expected empty poll result, got ok=%v, payload=%s", ok, string(payload))
+	}
+}
+
+

@@ -2,12 +2,12 @@
   "id": "channel-discord",
   "name": "Discord Bot Channel",
   "version": "2.0.0",
-  "description": "Discord Bot multi-account gateway for ActonOS AI agents with rich embeds, channel messaging, and multi-agent routing",
+  "description": "Discord Bot integration for ActonOS AI agents with rich embeds, multi-account gateway, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["channel"],
   "permissions": {
-    "net_outbound": ["discord.com"],
+    "net_outbound": ["discord.com", "gateway.discord.gg"],
     "secrets": ["discord_bot_token", "discord_bot_tokens.*"],
     "storage": true,
     "bus_events": ["channel.discord.received", "channel.discord.sent"]
@@ -24,19 +24,19 @@
     "properties": {
       "poll_interval_seconds": {
         "type": "integer",
-        "title": "Tần suất quét tin nhắn (giây)",
-        "description": "Khoảng thời gian giữa các lần polling tin nhắn mới từ Discord API",
+        "title": "Polling Interval (seconds)",
+        "description": "Time delay in seconds between consecutive message processing cycles",
         "default": 3,
         "minimum": 1,
         "maximum": 60,
-        "x-ui-group": "Cài đặt chung"
+        "x-ui-group": "General Settings"
       },
       "accounts": {
         "type": "array",
-        "title": "Danh sách Discord Bots",
-        "description": "Cấu hình một hoặc nhiều Bot Discord độc lập để lắng nghe đồng thời",
+        "title": "Discord Bot Accounts",
+        "description": "Configure one or multiple Discord bot accounts for simultaneous Gateway listening",
         "minItems": 1,
-        "x-ui-group": "Tài khoản Bot",
+        "x-ui-group": "Bot Accounts",
         "items": {
           "type": "object",
           "required": ["account_id", "bot_token", "default_agent"],
@@ -44,40 +44,41 @@
             "account_id": {
               "type": "string",
               "title": "Account ID",
-              "description": "Mã định danh duy nhất cho tài khoản bot này (dùng trong routing & session)",
+              "description": "Unique identifier for this bot instance used for routing and session isolation",
               "pattern": "^[a-z0-9_-]+$",
-              "x-ui-placeholder": "ví dụ: bot_cskh hoặc bot_devops"
+              "x-ui-placeholder": "e.g. support_bot or devops_bot"
             },
             "display_name": {
               "type": "string",
-              "title": "Tên gợi nhớ",
-              "x-ui-placeholder": "Bot Hỗ trợ CSKH"
+              "title": "Display Name",
+              "description": "Friendly label for this bot account",
+              "x-ui-placeholder": "Customer Support Bot"
             },
             "bot_token": {
               "type": "string",
               "title": "Discord Bot Token",
-              "description": "Bot Token lấy từ Discord Developer Portal (được lưu an toàn vào Hardware Vault)",
+              "description": "Bot Token from Discord Developer Portal (securely stored in Hardware Vault)",
               "x-secret": true,
               "x-ui-widget": "password",
               "x-ui-placeholder": "MTAx..."
             },
             "default_agent": {
               "type": "string",
-              "title": "Agent mặc định tiếp nhận",
-              "description": "Agent trong ActonOS sẽ tự động xử lý tin nhắn từ bot này",
+              "title": "Default Target Agent",
+              "description": "Default ActonOS agent to dispatch incoming messages when no explicit @mention is present",
               "x-ui-widget": "agent-selector",
               "x-ui-placeholder": "agent-support"
             },
             "listen_channel_id": {
               "type": "string",
-              "title": "Kênh lắng nghe (Channel ID)",
-              "description": "Chỉ định Channel ID cụ thể hoặc để trống để lắng nghe kênh mặc định",
+              "title": "Listen Channel ID (Optional)",
+              "description": "Specific Discord Channel ID to restrict listening (leave empty to listen to all channels)",
               "x-ui-placeholder": "112233445566778899"
             },
             "enable_embeds": {
               "type": "boolean",
-              "title": "Bật Rich Embeds",
-              "description": "Định dạng câu trả lời bằng Discord Embeds",
+              "title": "Enable Rich Embeds",
+              "description": "Format outbound replies using Discord rich embeds",
               "default": true
             }
           }

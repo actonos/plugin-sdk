@@ -3,6 +3,7 @@
 package abi
 
 import (
+	"encoding/json"
 	"log/slog"
 	"sync"
 )
@@ -15,11 +16,26 @@ type NativeFallbackHandler struct {
 	VaultFunc    func(key string) string
 	KVStore      map[string]string
 	BusEmitFunc  func(topic string, payload []byte) int32
+	WSConnectFunc func(url string, headers map[string]string) int32
+	WSSendFunc   func(handleID int32, msgType int32, data []byte) int32
+	WSPollFunc   func(handleID int32) []byte
+	WSCloseFunc  func(handleID int32) int32
+	wsConns      map[int32]*mockWSConn
+	nextWSHandle int32
 	lastResponse []byte
 }
 
+type mockWSConn struct {
+	url     string
+	headers map[string]string
+	queue   [][]byte
+	closed  bool
+}
+
 var fallbackHandler = &NativeFallbackHandler{
-	KVStore: make(map[string]string),
+	KVStore:      make(map[string]string),
+	wsConns:      make(map[int32]*mockWSConn),
+	nextWSHandle: 1,
 }
 
 // SetNativeFallbackHandler sets a custom fallback handler for native testing.
@@ -124,6 +140,91 @@ func BusEmitEvent(topicPtr uint32, topicLen uint32, payloadPtr uint32, payloadLe
 	payload := PtrToBytes(payloadPtr, payloadLen)
 	if fallbackHandler.BusEmitFunc != nil {
 		return fallbackHandler.BusEmitFunc(topic, payload)
+	}
+	return 0
+}
+
+func WSConnect(urlPtr, urlLen, headersPtr, headersLen uint32) int32 {
+	url := PtrToString(urlPtr, urlLen)
+	var headers map[string]string
+	if headersLen > 0 {
+		hBytes := PtrToBytes(headersPtr, headersLen)
+		_ = json.Unmarshal(hBytes, &headers)
+	}
+
+	fallbackHandler.mu.Lock()
+	defer fallbackHandler.mu.Unlock()
+
+	if fallbackHandler.WSConnectFunc != nil {
+		return fallbackHandler.WSConnectFunc(url, headers)
+	}
+
+	handleID := fallbackHandler.nextWSHandle
+	fallbackHandler.nextWSHandle++
+	fallbackHandler.wsConns[handleID] = &mockWSConn{
+		url:     url,
+		headers: headers,
+		queue:   make([][]byte, 0),
+	}
+	return handleID
+}
+
+func WSSend(handleID int32, msgType int32, dataPtr, dataLen uint32) int32 {
+	data := PtrToBytes(dataPtr, dataLen)
+
+	fallbackHandler.mu.Lock()
+	defer fallbackHandler.mu.Unlock()
+
+	if fallbackHandler.WSSendFunc != nil {
+		return fallbackHandler.WSSendFunc(handleID, msgType, data)
+	}
+
+	conn, exists := fallbackHandler.wsConns[handleID]
+	if !exists || conn.closed {
+		return -1
+	}
+	return 0
+}
+
+func WSPoll(handleID int32) int32 {
+	fallbackHandler.mu.Lock()
+	defer fallbackHandler.mu.Unlock()
+
+	if fallbackHandler.WSPollFunc != nil {
+		msg := fallbackHandler.WSPollFunc(handleID)
+		if len(msg) == 0 {
+			return 0
+		}
+		fallbackHandler.lastResponse = msg
+		return int32(len(msg))
+	}
+
+	conn, exists := fallbackHandler.wsConns[handleID]
+	if !exists || conn.closed {
+		return -1
+	}
+
+	if len(conn.queue) == 0 {
+		return 0
+	}
+
+	msg := conn.queue[0]
+	conn.queue = conn.queue[1:]
+	fallbackHandler.lastResponse = msg
+	return int32(len(msg))
+}
+
+func WSClose(handleID int32) int32 {
+	fallbackHandler.mu.Lock()
+	defer fallbackHandler.mu.Unlock()
+
+	if fallbackHandler.WSCloseFunc != nil {
+		return fallbackHandler.WSCloseFunc(handleID)
+	}
+
+	if conn, exists := fallbackHandler.wsConns[handleID]; exists {
+		conn.closed = true
+		delete(fallbackHandler.wsConns, handleID)
 	}
 	return 0
 }

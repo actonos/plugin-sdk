@@ -13,6 +13,7 @@ Every plugin handler receives a `Context` interface providing safe access to hos
 |:---|:---|:---|
 | `ctx.Config()` | `ConfigStore` | Typed access to user-configured plugin settings defined via `config_schema`. |
 | `ctx.HTTP()` | `HTTPClient` | Outbound HTTP requests filtered by manifest domain egress whitelist. |
+| `ctx.WS()` | `WebSocketClient` | Sandboxed real-time WebSocket client (`Dial`, `SendText`, `SendBinary`, `Poll`). |
 | `ctx.Vault()` | `VaultClient` | Retrieve authorized tokens and credentials from the Hardware Vault. |
 | `ctx.Storage()` | `KVStorage` | Persistent SQLite key-value partition unique to this plugin. |
 | `ctx.EventBus()` | `EventBus` | Publish events onto the ActonOS internal message bus. |

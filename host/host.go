@@ -26,6 +26,15 @@ type MockHost struct {
 	httpMocks        map[string]HTTPMockResponse
 	logs             []LogEntry
 	pendingResponses map[string][]byte
+	wsConns          map[int32]*mockHostWSConn
+	nextWSHandle     int32
+}
+
+type mockHostWSConn struct {
+	url     string
+	headers map[string]string
+	queue   [][]byte
+	closed  bool
 }
 
 // BusEvent records an event emitted by a plugin.
@@ -60,6 +69,8 @@ func NewMockHost(ctx context.Context) (*MockHost, error) {
 		allowedNet:       []string{"*"}, // Default allow in mock
 		httpMocks:        make(map[string]HTTPMockResponse),
 		pendingResponses: make(map[string][]byte),
+		wsConns:          make(map[int32]*mockHostWSConn),
+		nextWSHandle:     1,
 	}
 
 	if err := h.registerHostModules(ctx); err != nil {
@@ -319,7 +330,113 @@ func (h *MockHost) registerHostModules(ctx context.Context) error {
 		return err
 	}
 
+	// 6. acton_ws module
+	wsBuilder := h.runtime.NewHostModuleBuilder("acton_ws")
+	wsBuilder.NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, urlPtr, urlLen, headersPtr, headersLen uint32) int32 {
+			urlBytes, ok := mod.Memory().Read(urlPtr, urlLen)
+			if !ok {
+				return -1
+			}
+			wsURL := string(urlBytes)
+
+			if !h.isDomainAllowed(wsURL) {
+				return -1
+			}
+
+			var headers map[string]string
+			if headersLen > 0 {
+				if hBytes, ok := mod.Memory().Read(headersPtr, headersLen); ok {
+					_ = json.Unmarshal(hBytes, &headers)
+				}
+			}
+
+			h.mu.Lock()
+			handleID := h.nextWSHandle
+			h.nextWSHandle++
+			h.wsConns[handleID] = &mockHostWSConn{
+				url:     wsURL,
+				headers: headers,
+				queue:   make([][]byte, 0),
+			}
+			h.mu.Unlock()
+
+			return handleID
+		}).
+		Export("ws_connect")
+
+	wsBuilder.NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, handleID int32, msgType int32, dataPtr, dataLen uint32) int32 {
+			h.mu.Lock()
+			conn, exists := h.wsConns[handleID]
+			h.mu.Unlock()
+
+			if !exists || conn == nil || conn.closed {
+				return -1
+			}
+
+			dataBytes, ok := mod.Memory().Read(dataPtr, dataLen)
+			if !ok {
+				return -1
+			}
+			_ = dataBytes
+			return 0
+		}).
+		Export("ws_send")
+
+	wsBuilder.NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, handleID int32) int32 {
+			h.mu.Lock()
+			conn, exists := h.wsConns[handleID]
+			if !exists || conn == nil {
+				h.mu.Unlock()
+				return -1
+			}
+
+			if len(conn.queue) == 0 {
+				if conn.closed {
+					h.mu.Unlock()
+					return -1
+				}
+				h.mu.Unlock()
+				return 0
+			}
+
+			msg := conn.queue[0]
+			conn.queue = conn.queue[1:]
+			h.pendingResponses[mod.Name()] = msg
+			h.mu.Unlock()
+
+			return int32(len(msg))
+		}).
+		Export("ws_poll")
+
+	wsBuilder.NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, handleID int32) int32 {
+			h.mu.Lock()
+			if conn, exists := h.wsConns[handleID]; exists {
+				conn.closed = true
+				delete(h.wsConns, handleID)
+			}
+			h.mu.Unlock()
+			return 0
+		}).
+		Export("ws_close")
+
+	if _, err := wsBuilder.Instantiate(ctx); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// PushWSMessage simulates an incoming message on a mock WebSocket connection.
+func (h *MockHost) PushWSMessage(handleID int32, msg []byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if conn, exists := h.wsConns[handleID]; exists && !conn.closed {
+		conn.queue = append(conn.queue, msg)
+	}
 }
 
 func (h *MockHost) setPendingResponse(modName string, data []byte) uint32 {
