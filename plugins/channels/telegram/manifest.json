@@ -1,16 +1,27 @@
 {
   "id": "channel-telegram",
   "name": "Telegram Bot Channel",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Telegram Bot integration for ActonOS AI agents with MarkdownV2, multi-bot accounts, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
-  "capabilities": ["channel"],
+  "capabilities": [
+    "channel"
+  ],
   "permissions": {
-    "net_outbound": ["api.telegram.org"],
-    "secrets": ["telegram_bot_token", "telegram_bot_tokens.*", "bot_token"],
+    "net_outbound": [
+      "api.telegram.org"
+    ],
+    "secrets": [
+      "telegram_bot_token",
+      "telegram_bot_tokens.*",
+      "bot_token"
+    ],
     "storage": true,
-    "bus_events": ["channel.telegram.received", "channel.telegram.sent"]
+    "bus_events": [
+      "channel.telegram.received",
+      "channel.telegram.sent"
+    ]
   },
   "channels": [
     {
@@ -55,7 +66,10 @@
         "x-ui-group": "Advanced Multi-Bot Accounts",
         "items": {
           "type": "object",
-          "required": ["account_id", "bot_token"],
+          "required": [
+            "account_id",
+            "bot_token"
+          ],
           "properties": {
             "account_id": {
               "type": "string",

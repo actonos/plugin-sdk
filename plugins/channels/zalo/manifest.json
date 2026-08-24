@@ -1,16 +1,28 @@
 {
   "id": "channel-zalo",
   "name": "Zalo Bot Platform Channel",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Official Zalo Bot Platform (bot.zapps.me) API integration for ActonOS AI agents with Markdown rich text, typing indicators, photo attachments, multi-account support, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
-  "capabilities": ["channel"],
+  "capabilities": [
+    "channel"
+  ],
   "permissions": {
-    "net_outbound": ["bot-api.zaloplatforms.com", "openapi.zalo.me"],
-    "secrets": ["zalo_bot_token", "zalo_tokens.*"],
+    "net_outbound": [
+      "bot-api.zaloplatforms.com",
+      "openapi.zalo.me"
+    ],
+    "secrets": [
+      "zalo_bot_token",
+      "zalo_tokens.*"
+    ],
     "storage": true,
-    "bus_events": ["channel.zalo.received", "channel.zalo.sent", "channel.zalo.action"]
+    "bus_events": [
+      "channel.zalo.received",
+      "channel.zalo.sent",
+      "channel.zalo.action"
+    ]
   },
   "channels": [
     {
@@ -34,7 +46,10 @@
         "type": "string",
         "title": "Default Parse Mode",
         "description": "Rich text format parser (markdown or html)",
-        "enum": ["markdown", "html"],
+        "enum": [
+          "markdown",
+          "html"
+        ],
         "default": "markdown"
       },
       "default_agent": {
@@ -76,11 +91,16 @@
             "parse_mode": {
               "type": "string",
               "title": "Parse Mode",
-              "enum": ["markdown", "html"],
+              "enum": [
+                "markdown",
+                "html"
+              ],
               "default": "markdown"
             }
           },
-          "required": ["account_id"]
+          "required": [
+            "account_id"
+          ]
         }
       }
     }

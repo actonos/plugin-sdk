@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-)
 
-const version = "1.0.0"
+	"github.com/actonos/plugin-sdk/sdk"
+)
 
 func printUsage() {
 	fmt.Print(`
@@ -13,7 +13,7 @@ func printUsage() {
   / _ | ____/ /____  ___    / __ \/ ___/  / __// _ \/ //_/
  / __ |/ __/ __/ _ \/ _ \  / /_/ /\__ \  _\ \ / // / ,<   
 /_/ |_|\__/\__/\___/_//_/  \____//____/ /___//____/_/|_|  
-ActonOS Plugin Developer CLI (v` + version + `)
+ActonOS Plugin Developer CLI (v` + sdk.Version + `)
 
 USAGE:
   acton-plugin <command> [arguments]
@@ -68,8 +68,7 @@ func main() {
 	case "pack", "package":
 		err = runPack(args)
 	case "version", "-v", "--version":
-		fmt.Printf("acton-plugin CLI version %s\n", version)
-		return
+		err = runVersion(args)
 	case "help", "-h", "--help":
 		printUsage()
 		return

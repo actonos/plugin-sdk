@@ -6,7 +6,7 @@ This guide will walk you through creating, compiling, testing, and distributing 
 
 ## 1. Prerequisites
 
-- **Go 1.22+** (Go 1.24+ or 1.26+ recommended with native `wasip1` / `wasm` support).
+- **Go 1.26+** (native `wasip1` / `wasm` compiler support).
 - Build the `acton-plugin` CLI:
   ```bash
   go build -o acton-plugin ./cmd/acton-plugin/
