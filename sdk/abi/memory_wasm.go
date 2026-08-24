@@ -7,22 +7,16 @@ import (
 	"unsafe"
 )
 
-// Slab/Pool sizes for fast zero-GC memory allocation
-const (
-	slabSmall  = 512
-	slabMedium = 4096
-	slabLarge  = 65536
-)
+const arenaSize = 8 * 1024 * 1024 // 8MB pre-allocated static arena
 
 var (
-	poolMu       sync.Mutex
-	smallPool    [][]byte
-	mediumPool   [][]byte
-	largePool    [][]byte
-	activeBlocks = make(map[uint32][]byte)
+	arenaMu     sync.Mutex
+	arenaBuf    = make([]byte, arenaSize)
+	arenaOffset uint32
+	activeCount int
 )
 
-// Alloc allocates a block of memory of given size in WASM linear memory with zero-GC recycling.
+// Alloc allocates a block of memory of given size in WASM linear memory from static arena.
 //
 //go:wasmexport acton_alloc
 //export acton_alloc
@@ -31,43 +25,29 @@ func Alloc(size uint32) uint32 {
 		return 0
 	}
 
-	var buf []byte
-
-	poolMu.Lock()
-	if size <= slabSmall && len(smallPool) > 0 {
-		buf = smallPool[len(smallPool)-1]
-		smallPool = smallPool[:len(smallPool)-1]
-	} else if size <= slabMedium && len(mediumPool) > 0 {
-		buf = mediumPool[len(mediumPool)-1]
-		mediumPool = mediumPool[:len(mediumPool)-1]
-	} else if size <= slabLarge && len(largePool) > 0 {
-		buf = largePool[len(largePool)-1]
-		largePool = largePool[:len(largePool)-1]
-	}
-	poolMu.Unlock()
-
-	if buf == nil || uint32(len(buf)) < size {
-		allocSize := size
-		if size <= slabSmall {
-			allocSize = slabSmall
-		} else if size <= slabMedium {
-			allocSize = slabMedium
-		} else if size <= slabLarge {
-			allocSize = slabLarge
-		}
-		buf = make([]byte, allocSize)
+	// 8-byte alignment
+	alignedSize := (size + 7) & ^uint32(7)
+	if alignedSize > arenaSize {
+		// Fallback for unusually large single allocation
+		buf := make([]byte, size)
+		return uint32(uintptr(unsafe.Pointer(&buf[0])))
 	}
 
-	ptr := uint32(uintptr(unsafe.Pointer(&buf[0])))
+	arenaMu.Lock()
+	defer arenaMu.Unlock()
 
-	poolMu.Lock()
-	activeBlocks[ptr] = buf
-	poolMu.Unlock()
+	if arenaOffset+alignedSize > arenaSize {
+		arenaOffset = 0 // Wrap around ring buffer
+	}
+
+	ptr := uint32(uintptr(unsafe.Pointer(&arenaBuf[0]))) + arenaOffset
+	arenaOffset += alignedSize
+	activeCount++
 
 	return ptr
 }
 
-// Free returns the allocated buffer to the slab pool for immediate zero-GC recycling.
+// Free releases the allocated buffer reference in the ring arena.
 //
 //go:wasmexport acton_free
 //export acton_free
@@ -76,23 +56,14 @@ func Free(ptr uint32, size uint32) {
 		return
 	}
 
-	poolMu.Lock()
-	buf, exists := activeBlocks[ptr]
-	if !exists {
-		poolMu.Unlock()
-		return
+	arenaMu.Lock()
+	if activeCount > 0 {
+		activeCount--
 	}
-	delete(activeBlocks, ptr)
-
-	capSize := len(buf)
-	if capSize == slabSmall && len(smallPool) < 128 {
-		smallPool = append(smallPool, buf)
-	} else if capSize == slabMedium && len(mediumPool) < 64 {
-		mediumPool = append(mediumPool, buf)
-	} else if capSize == slabLarge && len(largePool) < 32 {
-		largePool = append(largePool, buf)
+	if activeCount == 0 {
+		arenaOffset = 0
 	}
-	poolMu.Unlock()
+	arenaMu.Unlock()
 }
 
 // GetBuffer retrieves a direct slice reference to WASM linear memory.

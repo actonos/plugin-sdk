@@ -128,9 +128,29 @@ func (r *PluginRunner) ExecuteTool(toolName string, inputJSON []byte) (*sdk.Tool
 	}
 	defer r.free(argsPtr, argsLen)
 
-	results, err := execFunc.Call(r.ctx, uint64(namePtr), uint64(nameLen), uint64(argsPtr), uint64(argsLen))
-	if err != nil {
-		return nil, fmt.Errorf("calling acton_tool_execute: %w", err)
+	var results []uint64
+	paramCount := len(execFunc.Definition().ParamTypes())
+	if paramCount == 2 {
+		envelope := map[string]any{
+			"tool_name": toolName,
+			"input":     json.RawMessage(inputJSON),
+		}
+		envBytes, _ := json.Marshal(envelope)
+		envPtr, envLen, err := r.writeBytes(envBytes)
+		if err != nil {
+			return nil, fmt.Errorf("writing envelope into wasm linear memory: %w", err)
+		}
+		defer r.free(envPtr, envLen)
+
+		results, err = execFunc.Call(r.ctx, uint64(envPtr), uint64(envLen))
+		if err != nil {
+			return nil, fmt.Errorf("calling acton_tool_execute (2-param): %w", err)
+		}
+	} else {
+		results, err = execFunc.Call(r.ctx, uint64(namePtr), uint64(nameLen), uint64(argsPtr), uint64(argsLen))
+		if err != nil {
+			return nil, fmt.Errorf("calling acton_tool_execute: %w", err)
+		}
 	}
 
 	if len(results) == 0 || results[0] == 0 {

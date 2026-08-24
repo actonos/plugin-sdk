@@ -156,8 +156,10 @@ func (h *defaultHTTPClient) Do(req HTTPRequest) (*HTTPResponse, error) {
 		return nil, fmt.Errorf("empty response from host http proxy")
 	}
 
-	resBuf := make([]byte, resLen)
-	destPtr, _ := abi.BytesToPtr(resBuf)
+	destPtr := abi.Alloc(resLen)
+	if destPtr == 0 {
+		return nil, fmt.Errorf("failed to allocate %d bytes for response", resLen)
+	}
 	defer abi.Free(destPtr, resLen)
 
 	abi.SysReadResponse(destPtr, resLen)
@@ -246,8 +248,10 @@ func (c *defaultWebSocketConn) Poll() ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	destBuf := make([]byte, resLen)
-	destPtr, _ := abi.BytesToPtr(destBuf)
+	destPtr := abi.Alloc(uint32(resLen))
+	if destPtr == 0 {
+		return nil, false, fmt.Errorf("failed to allocate %d bytes for ws poll", resLen)
+	}
 	defer abi.Free(destPtr, uint32(resLen))
 
 	abi.SysReadResponse(destPtr, uint32(resLen))
@@ -362,8 +366,10 @@ func (v *defaultVaultClient) GetSecret(key string) (string, error) {
 		return "", fmt.Errorf("secret not found or unauthorized: %s", key)
 	}
 
-	destBuf := make([]byte, resLen)
-	destPtr, _ := abi.BytesToPtr(destBuf)
+	destPtr := abi.Alloc(resLen)
+	if destPtr == 0 {
+		return "", fmt.Errorf("failed to allocate %d bytes for vault secret", resLen)
+	}
 	defer abi.Free(destPtr, resLen)
 
 	abi.SysReadResponse(destPtr, resLen)
@@ -383,8 +389,10 @@ func (s *defaultKVStorage) Get(key string) (string, bool, error) {
 		return "", false, nil
 	}
 
-	destBuf := make([]byte, resLen)
-	destPtr, _ := abi.BytesToPtr(destBuf)
+	destPtr := abi.Alloc(resLen)
+	if destPtr == 0 {
+		return "", false, fmt.Errorf("failed to allocate %d bytes for storage get", resLen)
+	}
 	defer abi.Free(destPtr, resLen)
 
 	abi.SysReadResponse(destPtr, resLen)

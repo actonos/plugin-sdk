@@ -91,10 +91,17 @@ func ActonToolExecuteTestWrapper(namePtr uint32, nameLen uint32, argsPtr uint32,
 	return acton_tool_execute(namePtr, nameLen, argsPtr, argsLen)
 }
 
+var execCounter uint32
+
 //go:wasmexport acton_tool_execute
 //export acton_tool_execute
 func acton_tool_execute(namePtr uint32, nameLen uint32, argsPtr uint32, argsLen uint32) (ret uint64) {
-	runtime.Gosched()
+	execCounter++
+	if execCounter%64 == 0 {
+		runtime.GC()
+	} else {
+		runtime.Gosched()
+	}
 	defer runtime.Gosched()
 	defer func() {
 		if r := recover(); r != nil {
@@ -215,6 +222,13 @@ func acton_tool_execute(namePtr uint32, nameLen uint32, argsPtr uint32, argsLen 
 //go:wasmexport acton_channel_send
 //export acton_channel_send
 func acton_channel_send(ptr uint32, length uint32) (ret int32) {
+	execCounter++
+	if execCounter%64 == 0 {
+		runtime.GC()
+	} else {
+		runtime.Gosched()
+	}
+	defer runtime.Gosched()
 	defer func() {
 		if r := recover(); r != nil {
 			defaultCtx.Log().Error("panic in acton_channel_send", "panic", r)
@@ -251,6 +265,13 @@ func acton_channel_send(ptr uint32, length uint32) (ret int32) {
 //go:wasmexport acton_channel_poll
 //export acton_channel_poll
 func acton_channel_poll() (ret uint64) {
+	execCounter++
+	if execCounter%64 == 0 {
+		runtime.GC()
+	} else {
+		runtime.Gosched()
+	}
+	defer runtime.Gosched()
 	defer func() {
 		if r := recover(); r != nil {
 			defaultCtx.Log().Error("panic in acton_channel_poll", "panic", r)
@@ -288,6 +309,13 @@ func acton_channel_poll() (ret uint64) {
 //go:wasmexport acton_connector_action
 //export acton_connector_action
 func acton_connector_action(ptr uint32, length uint32) (ret uint64) {
+	execCounter++
+	if execCounter%64 == 0 {
+		runtime.GC()
+	} else {
+		runtime.Gosched()
+	}
+	defer runtime.Gosched()
 	defer func() {
 		if r := recover(); r != nil {
 			defaultCtx.Log().Error("panic in acton_connector_action", "panic", r)

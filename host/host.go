@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -459,9 +460,15 @@ func (h *MockHost) isDomainAllowed(rawURL string) bool {
 		return false
 	}
 
-	// Reject localhost / private cloud metadata SSRF by default
-	isSSRFTarget := hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1" ||
-		hostname == "169.254.169.254" || hostname == "0.0.0.0"
+	// Reject localhost, local domain, and private cloud metadata SSRF
+	isSSRFTarget := hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") ||
+		strings.HasSuffix(hostname, ".local") || hostname == "169.254.169.254"
+
+	if ip := net.ParseIP(hostname); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			isSSRFTarget = true
+		}
+	}
 
 	for _, pattern := range h.allowedNet {
 		pattern = strings.ToLower(strings.TrimSpace(pattern))
@@ -469,11 +476,11 @@ func (h *MockHost) isDomainAllowed(rawURL string) bool {
 			return !isSSRFTarget
 		}
 		if pattern == hostname {
-			return true
+			return !isSSRFTarget
 		}
 		if strings.HasPrefix(pattern, "*.") {
 			suffix := strings.TrimPrefix(pattern, "*.")
-			if hostname == suffix || strings.HasSuffix(hostname, "."+suffix) {
+			if (hostname == suffix || strings.HasSuffix(hostname, "."+suffix)) && !isSSRFTarget {
 				return true
 			}
 		}
