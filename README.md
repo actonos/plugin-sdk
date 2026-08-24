@@ -71,10 +71,9 @@ ActonOS-Plugin-SDK/
 │   ├── host.go              # Host syscall implementations (HTTP, Vault, Storage, Bus, Log)
 │   └── runner.go            # WASM module loader and executor
 ├── cmd/acton-plugin/        # Developer CLI Toolchain
-├── examples/                # Real-world reference plugins
-│   ├── weather-tool/        # Weather forecast tool (HTTP API, JSON schema)
-│   ├── telegram-channel/    # Telegram Bot adapter (PIN pairing, Long-polling)
-│   └── github-connector/    # GitHub SaaS connector (Vault token, repo & issue actions)
+├── plugins/                 # Built-in Official Plugins
+│   ├── channels/            # Chat channels (Discord, Slack, Telegram, WhatsApp, Zalo)
+│   └── saas/                # SaaS connectors (Figma, GitHub, Google, Jira, Linear, Notion, Slack)
 ├── spec/                    # Formal ABI & Manifest specifications
 └── docs/                    # Complete developer documentation
 ```

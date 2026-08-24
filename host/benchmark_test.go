@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkWazeroWasmToolExecution(b *testing.B) {
-	wasmPath := "../examples/weather-tool/dist/plugin.wasm"
+	wasmPath := "../plugins/saas/figma/dist/plugin.wasm"
 	ctx := context.Background()
 	mockHost, err := host.NewMockHost(ctx)
 	if err != nil {
@@ -16,10 +16,10 @@ func BenchmarkWazeroWasmToolExecution(b *testing.B) {
 	}
 	defer mockHost.Close()
 
-	mockHost.MockHTTPRoute("https://api.open-meteo.com/v1/forecast", host.HTTPMockResponse{
+	mockHost.MockHTTPRoute("https://api.figma.com/v1/files/sample_key", host.HTTPMockResponse{
 		Status:  200,
 		Headers: map[string]string{"Content-Type": "application/json"},
-		Body:    `{"current_weather":{"temperature":24.5,"windspeed":10.2,"weathercode":1,"is_day":1,"time":"2026-08-24T00:00"}}`,
+		Body:    `{"name":"ActonOS Design System","version":"1.0"}`,
 	})
 
 	runner, err := mockHost.LoadPluginFromFile(ctx, wasmPath)
@@ -28,11 +28,11 @@ func BenchmarkWazeroWasmToolExecution(b *testing.B) {
 	}
 	defer runner.Close()
 
-	inputJSON := []byte(`{"city":"Tokyo"}`)
+	inputJSON := []byte(`{"file_key":"sample_key"}`)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		res, err := runner.ExecuteTool("get_weather", inputJSON)
+		res, err := runner.ExecuteTool("get_file", inputJSON)
 		if err != nil || res.Error != "" {
 			b.Fatalf("failed: %v", err)
 		}

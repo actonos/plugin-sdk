@@ -13,7 +13,7 @@ import (
 
 func TestWasmCompilationAndExecution(t *testing.T) {
 	wasmPath := filepath.Join(t.TempDir(), "plugin.wasm")
-	cmd := exec.Command("go", "build", "-buildmode=c-shared", "-trimpath", "-o", wasmPath, "../examples/weather-tool")
+	cmd := exec.Command("go", "build", "-buildmode=c-shared", "-trimpath", "-o", wasmPath, "../plugins/saas/figma")
 	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -27,11 +27,11 @@ func TestWasmCompilationAndExecution(t *testing.T) {
 	}
 	defer mockHost.Close()
 
-	// Configure mock HTTP response for weather API
-	mockHost.MockHTTPRoute("https://api.open-meteo.com/v1/forecast", host.HTTPMockResponse{
+	// Configure mock HTTP response for Figma API
+	mockHost.MockHTTPRoute("https://api.figma.com/v1/files/sample_key", host.HTTPMockResponse{
 		Status:  200,
 		Headers: map[string]string{"Content-Type": "application/json"},
-		Body:    `{"current_weather":{"temperature":24.5,"windspeed":10.2,"weathercode":1,"is_day":1,"time":"2026-08-24T00:00"}}`,
+		Body:    `{"name":"ActonOS Design System","version":"1.0"}`,
 	})
 
 	runner, err := mockHost.LoadPluginFromFile(ctx, wasmPath)
@@ -41,7 +41,7 @@ func TestWasmCompilationAndExecution(t *testing.T) {
 	defer runner.Close()
 
 	// Execute tool
-	res, err := runner.ExecuteTool("get_weather", []byte(`{"city":"Tokyo"}`))
+	res, err := runner.ExecuteTool("get_file", []byte(`{"file_key":"sample_key"}`))
 	if err != nil {
 		t.Fatalf("execute tool error: %v", err)
 	}
@@ -53,11 +53,6 @@ func TestWasmCompilationAndExecution(t *testing.T) {
 
 	if res.Content == "" {
 		t.Errorf("expected non-empty content in tool result")
-	}
-
-	temp, ok := res.Data["temperature"].(float64)
-	if !ok || temp != 24.5 {
-		t.Errorf("expected temperature 24.5, got %v", res.Data["temperature"])
 	}
 }
 

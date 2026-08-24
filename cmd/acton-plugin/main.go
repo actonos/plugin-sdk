@@ -21,6 +21,7 @@ USAGE:
 COMMANDS:
   new <name>       Scaffold a new plugin project (tool, channel, or connector)
   build            Compile the plugin to WebAssembly (GOOS=wasip1 GOARCH=wasm)
+  build-all        Batch compile and package all plugins in plugins/ to dist/
   validate         Validate manifest.json schema, permissions, and security
   test             Execute plugin verification on local Wazero Mock Host
   sign             Sign plugin bundle using Ed25519 cryptographic key
@@ -32,6 +33,7 @@ EXAMPLES:
   acton-plugin new telegram-bot --type=channel
   acton-plugin new github-sync  --type=connector
   acton-plugin build
+  acton-plugin build-all
   acton-plugin validate
   acton-plugin test
   acton-plugin pack
@@ -53,6 +55,8 @@ func main() {
 	switch cmd {
 	case "new", "init":
 		err = runNew(args)
+	case "build-all", "pack-all":
+		err = runBuildAll(args)
 	case "build":
 		err = runBuild(args)
 	case "validate":
