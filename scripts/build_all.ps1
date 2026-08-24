@@ -12,7 +12,7 @@
     Clean the ./dist directory before building.
 
 .PARAMETER DownloadBaseURL
-    Base URL for release downloads (default: https://github.com/actonos/actonos/releases/latest/download)
+    Base URL for release downloads (default: https://github.com/actonos/plugin-sdk/releases/latest/download)
 
 .EXAMPLE
     .\scripts\build_all.ps1
@@ -22,7 +22,7 @@
 [CmdletBinding()]
 param(
     [switch]$Clean = $false,
-    [string]$DownloadBaseURL = "https://github.com/actonos/actonos/releases/latest/download"
+    [string]$DownloadBaseURL = "https://github.com/actonos/plugin-sdk/releases/latest/download"
 )
 
 $ErrorActionPreference = "Stop"

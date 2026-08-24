@@ -100,7 +100,7 @@ func runVersion(args []string) error {
 	fmt.Printf("%-24s %s\n", "Git Commit:", info.GitCommit)
 	fmt.Printf("%-24s %s\n", "Build Timestamp:", info.BuildDate)
 	fmt.Println("=================================================================")
-	fmt.Println("Documentation: https://github.com/actonos/actonos-plugin-sdk")
+	fmt.Println("Documentation: https://github.com/actonos/plugin-sdk")
 	fmt.Println(strings.Repeat("-", 65))
 
 	return nil

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	defaultReleaseDownloadBase = "https://github.com/actonos/actonos/releases/latest/download"
+	defaultReleaseDownloadBase = "https://github.com/actonos/plugin-sdk/releases/latest/download"
 	registryFilename           = "plugin-registry.json"
 )
 
