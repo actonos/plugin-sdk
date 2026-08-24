@@ -2,6 +2,8 @@ package main
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +18,11 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
+const (
+	defaultReleaseDownloadBase = "https://github.com/actonos/actonos/releases/latest/download"
+	registryFilename           = "plugin-registry.json"
+)
+
 type buildResult struct {
 	id     string
 	rel    string
@@ -25,11 +32,37 @@ type buildResult struct {
 	dur    time.Duration
 }
 
+// PluginRegistryEntry represents a lightweight plugin catalog entry in plugin-registry.json.
+type PluginRegistryEntry struct {
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Version      string           `json:"version"`
+	Description  string           `json:"description"`
+	Author       string           `json:"author,omitempty"`
+	License      string           `json:"license,omitempty"`
+	Capabilities []sdk.Capability `json:"capabilities"`
+	Filename     string           `json:"filename"`
+	DownloadURL  string           `json:"download_url"`
+	SizeBytes    int64            `json:"size_bytes"`
+	SHA256       string           `json:"sha256"`
+}
+
+// PluginRegistry defines the complete catalog format for ActonOS Plugin Store.
+type PluginRegistry struct {
+	SchemaVersion   string                `json:"schema_version"`
+	GeneratedAt     string                `json:"generated_at"`
+	SDKVersion      string                `json:"sdk_version"`
+	TotalPlugins    int                   `json:"total_plugins"`
+	DownloadBaseURL string                `json:"download_base_url"`
+	Plugins         []PluginRegistryEntry `json:"plugins"`
+}
+
 func runBuildAll(args []string) error {
 	fsFlags := flag.NewFlagSet("build-all", flag.ContinueOnError)
 	pluginsDir := fsFlags.String("dir", "plugins", "Directory to scan for plugins")
 	distDir := fsFlags.String("out", "dist", "Output directory for .wasm and .actonpkg files")
 	clean := fsFlags.Bool("clean", false, "Clean dist directory before building")
+	downloadBase := fsFlags.String("download-base", defaultReleaseDownloadBase, "Base URL for release downloads")
 
 	if err := fsFlags.Parse(args); err != nil {
 		return err
@@ -70,6 +103,7 @@ func runBuildAll(args []string) error {
 	fmt.Printf("Found %d plugin(s) to process into '%s'...\n\n", len(manifests), *distDir)
 
 	var results []buildResult
+	var registryEntries []PluginRegistryEntry
 	totalStart := time.Now()
 
 	for _, manifestPath := range manifests {
@@ -95,7 +129,8 @@ func runBuildAll(args []string) error {
 		startTime := time.Now()
 
 		wasmOut := filepath.Join(*distDir, pluginID+".wasm")
-		pkgOut := filepath.Join(*distDir, pluginID+".actonpkg")
+		pkgFilename := pluginID + ".actonpkg"
+		pkgOut := filepath.Join(*distDir, pkgFilename)
 
 		// 1. Compile WASM binary
 		cmd := exec.Command("go", "build", "-buildmode=c-shared", "-trimpath", "-o", wasmOut, "./"+pluginDir)
@@ -147,7 +182,28 @@ func runBuildAll(args []string) error {
 		pkgKB := float64(pkgInfo.Size()) / 1024.0
 		dur := time.Since(startTime)
 
-		fmt.Printf("   ✅ Compiled & Packaged -> dist/%s.actonpkg (%.1f KB) in %v\n", pluginID, pkgKB, dur.Round(time.Millisecond))
+		// 3. Compute SHA256 checksum of the package
+		pkgBytes, _ := os.ReadFile(pkgOut)
+		hash := sha256.Sum256(pkgBytes)
+		sha256Hex := hex.EncodeToString(hash[:])
+
+		downloadURL := fmt.Sprintf("%s/%s", strings.TrimRight(*downloadBase, "/"), pkgFilename)
+
+		registryEntries = append(registryEntries, PluginRegistryEntry{
+			ID:           manifest.ID,
+			Name:         manifest.Name,
+			Version:      manifest.Version,
+			Description:  manifest.Description,
+			Author:       manifest.Author,
+			License:      manifest.License,
+			Capabilities: manifest.Capabilities,
+			Filename:     pkgFilename,
+			DownloadURL:  downloadURL,
+			SizeBytes:    pkgInfo.Size(),
+			SHA256:       sha256Hex,
+		})
+
+		fmt.Printf("   ✅ Compiled & Packaged -> dist/%s (%.1f KB) in %v\n", pkgFilename, pkgKB, dur.Round(time.Millisecond))
 
 		results = append(results, buildResult{
 			id:     pluginID,
@@ -157,6 +213,23 @@ func runBuildAll(args []string) error {
 			pkgKB:  pkgKB,
 			dur:    dur,
 		})
+	}
+
+	// 4. Generate plugin-registry.json
+	registry := PluginRegistry{
+		SchemaVersion:   "1.0.0",
+		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
+		SDKVersion:      sdk.Version,
+		TotalPlugins:    len(registryEntries),
+		DownloadBaseURL: *downloadBase,
+		Plugins:         registryEntries,
+	}
+
+	registryJSON, err := json.MarshalIndent(registry, "", "  ")
+	if err == nil {
+		distRegistryPath := filepath.Join(*distDir, registryFilename)
+		_ = os.WriteFile(distRegistryPath, registryJSON, 0644)
+		fmt.Printf("\n📄 Generated registry catalog -> %s (%d plugins)\n", distRegistryPath, len(registryEntries))
 	}
 
 	fmt.Println("\n=================================================================")
