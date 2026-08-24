@@ -1,40 +1,41 @@
 {
   "id": "channel-zalo",
-  "name": "Zalo OA Channel",
+  "name": "Zalo Bot Platform Channel",
   "version": "2.0.0",
-  "description": "Zalo Official Account OpenAPI integration for ActonOS AI agents with rich text and agent routing",
+  "description": "Official Zalo Bot Platform (bot.zapps.me) API integration for ActonOS AI agents with Markdown rich text, typing indicators, photo attachments, multi-account support, and agent routing",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["channel"],
   "permissions": {
-    "net_outbound": ["openapi.zalo.me"],
-    "secrets": ["zalo_oa_access_token", "zalo_tokens.*"],
+    "net_outbound": ["bot-api.zaloplatforms.com", "openapi.zalo.me"],
+    "secrets": ["zalo_bot_token", "zalo_tokens.*"],
     "storage": true,
-    "bus_events": ["channel.zalo.received", "channel.zalo.sent"]
+    "bus_events": ["channel.zalo.received", "channel.zalo.sent", "channel.zalo.action"]
   },
   "channels": [
     {
       "name": "zalo",
-      "display_name": "Zalo Official Account",
+      "display_name": "Zalo Bot Platform",
       "requires_pairing": true
     }
   ],
   "config_schema": {
     "type": "object",
     "properties": {
-      "app_id": {
+      "bot_token": {
         "type": "string",
-        "title": "Zalo App ID",
-        "description": "Zalo Developer App ID",
-        "x-ui-placeholder": "1234567890..."
-      },
-      "oa_access_token": {
-        "type": "string",
-        "title": "Official Account Access Token",
-        "description": "Zalo OpenAPI OA Access Token",
+        "title": "Zalo Bot Token",
+        "description": "Bot Token generated from Zalo Bot Platform (https://bot.zapps.me)",
         "x-secret": true,
         "x-ui-widget": "password",
-        "x-ui-placeholder": "Bearer token..."
+        "x-ui-placeholder": "e.g. 1459232241454765289:AAHk..."
+      },
+      "parse_mode": {
+        "type": "string",
+        "title": "Default Parse Mode",
+        "description": "Rich text format parser (markdown or html)",
+        "enum": ["markdown", "html"],
+        "default": "markdown"
       },
       "default_agent": {
         "type": "string",
@@ -42,6 +43,45 @@
         "description": "Default ActonOS agent to dispatch incoming messages",
         "x-ui-widget": "agent-selector",
         "x-ui-placeholder": "agent-support"
+      },
+      "accounts": {
+        "type": "array",
+        "title": "Multi-Bot Accounts",
+        "description": "Configure multiple Zalo Bots for department routing or multi-tenancy",
+        "items": {
+          "type": "object",
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "title": "Account ID",
+              "description": "Unique identifier for this bot account (e.g. support-bot, sales-bot)"
+            },
+            "display_name": {
+              "type": "string",
+              "title": "Display Name",
+              "description": "Friendly name for UI display"
+            },
+            "bot_token": {
+              "type": "string",
+              "title": "Bot Token",
+              "description": "Account-specific Zalo Bot Token",
+              "x-secret": true,
+              "x-ui-widget": "password"
+            },
+            "default_agent": {
+              "type": "string",
+              "title": "Default Target Agent",
+              "description": "Target agent for this specific bot"
+            },
+            "parse_mode": {
+              "type": "string",
+              "title": "Parse Mode",
+              "enum": ["markdown", "html"],
+              "default": "markdown"
+            }
+          },
+          "required": ["account_id"]
+        }
       }
     }
   }

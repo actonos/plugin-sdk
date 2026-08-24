@@ -69,25 +69,16 @@ for manifest in "${MANIFESTS[@]}"; do
         continue
     fi
 
-    # 2. Package into .actonpkg (Zip bundle)
+    # 2. Package into .actonpkg (Zip bundle via acton-plugin CLI)
     rm -f "${PKG_OUT}"
-    TMP_ZIP_DIR=$(mktemp -d)
-    cp "${manifest}" "${TMP_ZIP_DIR}/manifest.json"
-    cp "${WASM_OUT}" "${TMP_ZIP_DIR}/plugin.wasm"
-
-    if [ -f "${PLUGIN_DIR}/dist/signature.sig" ]; then
-        cp "${PLUGIN_DIR}/dist/signature.sig" "${TMP_ZIP_DIR}/signature.sig"
+    if go run "${ROOT_DIR}/cmd/acton-plugin" pack -manifest "${manifest}" -wasm "${WASM_OUT}" -out "${PKG_OUT}" > /dev/null 2>&1; then
+        PKG_SIZE=$(du -h "${PKG_OUT}" | cut -f1)
+        echo "   ✅ Compiled & Packaged -> dist/${PLUGIN_ID}.actonpkg (${PKG_SIZE})"
+        ((SUCCESS_COUNT++))
+    else
+        echo "❌ [${PLUGIN_ID}] Packaging failed!"
+        ((FAIL_COUNT++))
     fi
-    if [ -f "${PLUGIN_DIR}/README.md" ]; then
-        cp "${PLUGIN_DIR}/README.md" "${TMP_ZIP_DIR}/README.md"
-    fi
-
-    (cd "${TMP_ZIP_DIR}" && zip -q -9 -r "${PKG_OUT}" .)
-    rm -rf "${TMP_ZIP_DIR}"
-
-    PKG_SIZE=$(du -h "${PKG_OUT}" | cut -f1)
-    echo "   ✅ Compiled & Packaged -> dist/${PLUGIN_ID}.actonpkg (${PKG_SIZE})"
-    ((SUCCESS_COUNT++))
 done
 
 echo ""
