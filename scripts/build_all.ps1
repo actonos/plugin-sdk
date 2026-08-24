@@ -1,12 +1,16 @@
 <#
 .SYNOPSIS
-    Builds and packages all ActonOS plugins inside the 'plugins' directory into 'dist/' as .actonpkg bundles
-    and generates the plugin-registry.json catalog.
+    Builds and packages ActonOS plugins inside the 'plugins' directory into 'dist/' as .actonpkg bundles
+    and generates/updates the plugin-registry.json catalog.
 
 .DESCRIPTION
     Scans the ./plugins directory (channels & saas connectors), validates manifests,
     compiles Go code into WebAssembly (GOOS=wasip1 GOARCH=wasm), packages them
     into production-ready .actonpkg archives, and generates plugin-registry.json with download URLs.
+
+.PARAMETER Plugin
+    Optional plugin name, ID, or folder name to build (e.g. 'zalo', 'channel-zalo', 'discord').
+    If omitted, all plugins are built.
 
 .PARAMETER Clean
     Clean the ./dist directory before building.
@@ -16,11 +20,16 @@
 
 .EXAMPLE
     .\scripts\build_all.ps1
-    .\build_all.ps1 -Clean
+    .\scripts\build_all.ps1 zalo
+    .\scripts\build_all.ps1 -Plugin channel-zalo
+    .\scripts\build_all.ps1 -Clean
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Position = 0, ValueFromRemainingArguments = $false)]
+    [Alias("Name", "Target", "Filter")]
+    [string]$Plugin = "",
     [switch]$Clean = $false,
     [string]$DownloadBaseURL = "https://github.com/actonos/plugin-sdk/releases/latest/download"
 )
@@ -51,12 +60,15 @@ if (Test-Path $versionFile) {
 }
 
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "🚀 ActonOS Plugin SDK - Batch Build & Package Toolchain" -ForegroundColor Cyan
+Write-Host "🚀 ActonOS Plugin SDK - Build & Package Toolchain" -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "Root Directory: $RootDir" -ForegroundColor Gray
 Write-Host "Output Dist:    $DistDir" -ForegroundColor Gray
 Write-Host "SDK Version:    v$sdkVersion" -ForegroundColor Gray
 Write-Host "Download Base:  $DownloadBaseURL" -ForegroundColor Gray
+if ($Plugin -ne "") {
+    Write-Host "Plugin Filter:  '$Plugin'" -ForegroundColor Yellow
+}
 Write-Host ""
 
 $SearchPaths = @("plugins")
@@ -70,8 +82,37 @@ foreach ($p in $SearchPaths) {
     }
 }
 
+if ($Plugin -ne "") {
+    $searchTerm = $Plugin.Trim().ToLower()
+    $Filtered = @()
+    foreach ($m in $PluginManifests) {
+        $relPath = $m.DirectoryName.Substring($RootDir.Length + 1).Replace("\", "/").ToLower()
+        $folderName = (Split-Path $m.DirectoryName -Leaf).ToLower()
+        
+        $matches = $false
+        if ($folderName -eq $searchTerm -or $relPath.Contains($searchTerm)) {
+            $matches = $true
+        } else {
+            try {
+                $manifestJson = Get-Content -Raw -Path $m.FullName | ConvertFrom-Json
+                if ($manifestJson.id.ToLower().Contains($searchTerm) -or $manifestJson.name.ToLower().Contains($searchTerm)) {
+                    $matches = $true
+                }
+            } catch {}
+        }
+        if ($matches) {
+            $Filtered += $m
+        }
+    }
+    $PluginManifests = $Filtered
+}
+
 if ($PluginManifests.Count -eq 0) {
-    Write-Error "No plugins found in search paths: $($SearchPaths -join ', ')"
+    if ($Plugin -ne "") {
+        Write-Error "No plugins matching '$Plugin' found in: $($SearchPaths -join ', ')"
+    } else {
+        Write-Error "No plugins found in search paths: $($SearchPaths -join ', ')"
+    }
     exit 1
 }
 
@@ -232,24 +273,46 @@ foreach ($manifestItem in $PluginManifests) {
     }
 }
 
-# 4. Write plugin-registry.json
+# 4. Write / Update plugin-registry.json
+$distRegistryPath = Join-Path $DistDir "plugin-registry.json"
+$FinalRegistryEntries = @()
+
+if ($Plugin -ne "" -and (Test-Path $distRegistryPath) -and !$Clean) {
+    try {
+        $existingRegistry = Get-Content -Raw -Path $distRegistryPath | ConvertFrom-Json
+        $entryMap = [ordered]@{}
+        if ($existingRegistry.plugins) {
+            foreach ($p in $existingRegistry.plugins) {
+                $entryMap[$p.id] = $p
+            }
+        }
+        foreach ($newEntry in $RegistryEntries) {
+            $entryMap[$newEntry.id] = $newEntry
+        }
+        $FinalRegistryEntries = @($entryMap.Values)
+    } catch {
+        $FinalRegistryEntries = $RegistryEntries
+    }
+} else {
+    $FinalRegistryEntries = $RegistryEntries
+}
+
 $registryData = [ordered]@{
     schema_version    = "1.0.0"
     generated_at      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     sdk_version       = $sdkVersion
-    total_plugins     = $RegistryEntries.Count
+    total_plugins     = $FinalRegistryEntries.Count
     download_base_url = $DownloadBaseURL
-    plugins           = $RegistryEntries
+    plugins           = $FinalRegistryEntries
 }
 
 $registryJson = $registryData | ConvertTo-Json -Depth 10
-$distRegistryPath = Join-Path $DistDir "plugin-registry.json"
 Set-Content -Path $distRegistryPath -Value $registryJson
 
 $OverallStart.Stop()
 
 Write-Host ""
-Write-Host "📄 Generated Registry Catalog: dist/plugin-registry.json ($($RegistryEntries.Count) plugins)" -ForegroundColor Green
+Write-Host "📄 Generated Registry Catalog: dist/plugin-registry.json ($($FinalRegistryEntries.Count) plugins)" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Cyan

@@ -4,29 +4,37 @@ Official **Zalo Bot Platform** (`bot.zapps.me` / `bot-api.zaloplatforms.com`) ch
 
 ## Features
 
-- 🤖 **Zalo Bot API Support**: Integrates directly with the official [Zalo Bot Platform API](https://bot.zapps.me/docs/apis/getMe/).
-- 📝 **Markdown Rich Text (`parse_mode: "markdown"`)**: Supports `**bold**`, `*italic*`, `# Headings`, ordered/unordered lists, quotes, and color annotations.
-- ⌨️ **Typing Indicators (`sendChatAction`)**: Real-time `"typing"` status while agents formulate responses.
-- 🖼️ **Photo & Attachment Support (`sendPhoto`)**: Sends images with markdown captions.
+- 🤖 **Zalo Bot Platform API Integration**: Integrates directly with official Zalo Bot endpoints.
+- 📝 **Markdown Rich Text & Resilient Parsing**: Full Markdown support (`**bold**`, `*italic*`, `# Headings`, code blocks, lists) with automatic plain-text fallback if Markdown syntax fails.
+- ⚡ **Live Real-Time Typing Indicators (`typing`)**: Automatically displays *"đang nhập..."* typing indicator as soon as a user's message is received while the AI agent computes the answer.
+- 💬 **Auto Quote & Threaded Replies**: Outbound messages automatically attach `reply_to_message_id` to quote the user's prompt.
+- 🖼️ **Multi-Media Message Support**:
+  - **Photos / Images (`sendPhoto`)**: Sends image URLs with markdown captions and reply threading.
+  - **Documents / Files (`sendDocument`)**: Sends PDF, CSV, TXT, DOCX files with file names and captions.
+  - **Voice / Audio Notes (`sendVoice`)**: Sends voice/audio notes with captions.
+- 👥 **Group Chat & Direct Chat Routing**: Seamless handling for both `PRIVATE` and `GROUP` chat types with `@agent` mention extraction.
+- 🏢 **Multi-Bot Accounts Gateway**: Manage multiple Zalo bot accounts for department-based routing (e.g. `sales_bot`, `support_bot`).
+- 🛡️ **Hardware Vault Isolation**: Isolated secret storage for `zalo_bot_token` and `zalo_bot_tokens.<account_id>`.
 - 🔄 **Dual Receiving Modes**:
-  - **Webhook Mode**: Receives `message.text.received`, `message.image.received`, `message.voice.received` webhook requests.
-  - **Long-Polling Mode (`getUpdates`)**: Local polling for development and standalone environments.
-- 🏢 **Multi-Bot Accounts**: Supports multiple bot instances with independent tokens and agent routing.
-- 🛡️ **Hardware Vault Isolation**: Secure secret storage for `zalo_bot_token` and `zalo_tokens.<account_id>`.
+  - **Long-Polling Mode (`getUpdates`)**: High-performance local polling with configurable interval, auto conflict resolution, and automatic `deleteWebhook` recovery.
+  - **Webhook Mode**: Receives events queued through ActonOS Webhook gateway.
 
 ## Endpoints Used
 
 | Endpoint | Method | Description |
 | :--- | :---: | :--- |
-| `https://bot-api.zaloplatforms.com/bot${TOKEN}/getMe` | `POST` | Validates bot token & returns account info |
-| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendMessage` | `POST` | Transmits markdown text messages up to 2000 chars |
-| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendChatAction` | `POST` | Emits typing indicator to chat |
-| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendPhoto` | `POST` | Sends image with caption |
-| `https://bot-api.zaloplatforms.com/bot${TOKEN}/getUpdates` | `POST` | Long-polling message reception |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/getMe` | `POST` | Validates bot token & returns bot name / ID |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendMessage` | `POST` | Transmits markdown text messages with chunking & quote replies |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendChatAction` | `POST` | Broadcasts real-time typing indicators |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendPhoto` | `POST` | Sends images with markdown captions |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendDocument` | `POST` | Sends documents with custom file names & captions |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendVoice` | `POST` | Sends voice/audio notes |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/getUpdates` | `POST` | Long-polling message updates with timeout |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/deleteWebhook` | `POST` | Clears active webhooks to ensure long-polling delivery |
 
 ## Permissions
 
-- `net_outbound`: `["bot-api.zaloplatforms.com", "openapi.zalo.me"]`
-- `secrets`: `["zalo_bot_token", "zalo_tokens.*"]`
+- `net_outbound`: `["bot-api.zaloplatforms.com", "openapi.zalo.me", "bot.zapps.me", "api.zapps.me"]`
+- `secrets`: `["zalo_bot_token", "zalo_bot_tokens.*", "zalo_tokens.*"]`
 - `storage`: `true`
 - `bus_events`: `["channel.zalo.received", "channel.zalo.sent", "channel.zalo.action"]`

@@ -63,9 +63,15 @@ func runBuildAll(args []string) error {
 	distDir := fsFlags.String("out", "dist", "Output directory for .wasm and .actonpkg files")
 	clean := fsFlags.Bool("clean", false, "Clean dist directory before building")
 	downloadBase := fsFlags.String("download-base", defaultReleaseDownloadBase, "Base URL for release downloads")
+	pluginFilter := fsFlags.String("plugin", "", "Filter plugin by ID, name, or folder path (e.g. zalo, discord)")
 
 	if err := fsFlags.Parse(args); err != nil {
 		return err
+	}
+
+	filter := strings.TrimSpace(*pluginFilter)
+	if filter == "" && fsFlags.NArg() > 0 {
+		filter = strings.TrimSpace(fsFlags.Arg(0))
 	}
 
 	if *clean {
@@ -93,13 +99,41 @@ func runBuildAll(args []string) error {
 		})
 	}
 
+	if filter != "" {
+		target := strings.ToLower(filter)
+		var filtered []string
+		for _, m := range manifests {
+			rel := strings.ToLower(filepath.ToSlash(filepath.Dir(m)))
+			base := strings.ToLower(filepath.Base(filepath.Dir(m)))
+			if base == target || strings.Contains(rel, target) {
+				filtered = append(filtered, m)
+				continue
+			}
+			if data, err := os.ReadFile(m); err == nil {
+				var mf sdk.PluginManifest
+				if json.Unmarshal(data, &mf) == nil {
+					if strings.Contains(strings.ToLower(mf.ID), target) || strings.Contains(strings.ToLower(mf.Name), target) {
+						filtered = append(filtered, m)
+					}
+				}
+			}
+		}
+		manifests = filtered
+	}
+
 	if len(manifests) == 0 {
+		if filter != "" {
+			return fmt.Errorf("no plugins matching '%s' found in: %v", filter, scanDirs)
+		}
 		return fmt.Errorf("no plugins found in: %v", scanDirs)
 	}
 
 	fmt.Println("=================================================================")
 	fmt.Println("🚀 ActonOS Plugin SDK - Batch Build & Package Toolchain")
 	fmt.Println("=================================================================")
+	if filter != "" {
+		fmt.Printf("Plugin Filter:  '%s'\n", filter)
+	}
 	fmt.Printf("Found %d plugin(s) to process into '%s'...\n\n", len(manifests), *distDir)
 
 	var results []buildResult
@@ -215,21 +249,47 @@ func runBuildAll(args []string) error {
 		})
 	}
 
-	// 4. Generate plugin-registry.json
+	// 4. Generate / Update plugin-registry.json
+	distRegistryPath := filepath.Join(*distDir, registryFilename)
+	finalEntries := registryEntries
+
+	if filter != "" && !*clean {
+		if existingData, err := os.ReadFile(distRegistryPath); err == nil {
+			var existingReg PluginRegistry
+			if json.Unmarshal(existingData, &existingReg) == nil {
+				entryMap := make(map[string]PluginRegistryEntry)
+				var orderedKeys []string
+				for _, p := range existingReg.Plugins {
+					entryMap[p.ID] = p
+					orderedKeys = append(orderedKeys, p.ID)
+				}
+				for _, newEntry := range registryEntries {
+					if _, exists := entryMap[newEntry.ID]; !exists {
+						orderedKeys = append(orderedKeys, newEntry.ID)
+					}
+					entryMap[newEntry.ID] = newEntry
+				}
+				finalEntries = make([]PluginRegistryEntry, 0, len(orderedKeys))
+				for _, k := range orderedKeys {
+					finalEntries = append(finalEntries, entryMap[k])
+				}
+			}
+		}
+	}
+
 	registry := PluginRegistry{
 		SchemaVersion:   "1.0.0",
 		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
 		SDKVersion:      sdk.Version,
-		TotalPlugins:    len(registryEntries),
+		TotalPlugins:    len(finalEntries),
 		DownloadBaseURL: *downloadBase,
-		Plugins:         registryEntries,
+		Plugins:         finalEntries,
 	}
 
 	registryJSON, err := json.MarshalIndent(registry, "", "  ")
 	if err == nil {
-		distRegistryPath := filepath.Join(*distDir, registryFilename)
 		_ = os.WriteFile(distRegistryPath, registryJSON, 0644)
-		fmt.Printf("\n📄 Generated registry catalog -> %s (%d plugins)\n", distRegistryPath, len(registryEntries))
+		fmt.Printf("\n📄 Generated registry catalog -> %s (%d plugins)\n", distRegistryPath, len(finalEntries))
 	}
 
 	fmt.Println("\n=================================================================")
