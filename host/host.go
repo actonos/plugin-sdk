@@ -182,10 +182,11 @@ func (h *MockHost) registerHostModules(ctx context.Context) error {
 			}
 
 			var req struct {
-				Method  string            `json:"method"`
-				URL     string            `json:"url"`
-				Headers map[string]string `json:"headers"`
-				Body    string            `json:"body"`
+				Method     string            `json:"method"`
+				URL        string            `json:"url"`
+				Headers    map[string]string `json:"headers"`
+				Body       string            `json:"body"`
+				BodyBase64 string            `json:"body_base64"`
 			}
 			if err := json.Unmarshal(reqBytes, &req); err != nil {
 				return h.setPendingResponse(mod.Name(), []byte(fmt.Sprintf(`{"status":400,"body":"%s"}`, err.Error())))

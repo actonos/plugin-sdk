@@ -80,6 +80,7 @@ type HTTPClient interface {
 	Get(url string) (*HTTPResponse, error)
 	GetWithBearer(url string, token string) (*HTTPResponse, error)
 	Post(url string, contentType string, body string) (*HTTPResponse, error)
+	PostBinary(url string, contentType string, body []byte) (*HTTPResponse, error)
 	PostJSON(url string, body any) (*HTTPResponse, error)
 	PostJSONWithBearer(url string, token string, body any) (*HTTPResponse, error)
 	Do(req HTTPRequest) (*HTTPResponse, error)

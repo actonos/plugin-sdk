@@ -10,9 +10,10 @@ Official **Zalo Bot Platform** (`bot.zapps.me` / `bot-api.zaloplatforms.com`) ch
 - 😊 **Acknowledgement Reactions**: Canonical `kind=reaction` / inbound ack emoji (`setMessageReaction`).
 - 💬 **Auto Quote & Threaded Replies**: Outbound `reply_to_id` maps to `reply_to_message_id`.
 - 🖼️ **Multi-Media Message Support**:
-  - **Photos / Images (`sendPhoto`)**: Sends image URLs with markdown captions and reply threading.
-  - **Documents / Files (`sendDocument`)**: Sends PDF, CSV, TXT, DOCX files with file names and captions.
-  - **Voice / Audio Notes (`sendVoice`)**: Sends voice/audio notes with captions.
+  - **Photos / Images (`sendPhoto`)**: Public HTTPS image URLs, or host `file_data` as a data URI.
+  - **Documents / Files (`sendDocument`)**: Public HTTPS URLs or host `file_data` as a data URI (Zalo Bot API is JSON+URL, not Telegram multipart).
+  - **Voice / Audio Notes (`sendVoice`)**: Public HTTPS `.aac` URLs or host `file_data`.
+  - Responses with HTTP 200 and `"ok": false` are treated as send failures.
 - 👥 **Group Chat & Direct Chat Routing**: Seamless handling for both `PRIVATE` and `GROUP` chat types with `@agent` mention extraction.
 - 🏢 **Canonical `accounts[]` Gateway**: Same account schema as Discord/Telegram/Slack/WhatsApp (`account_id`, `bot_token`, `default_agent`, typing/reaction/quote flags).
 - 🛡️ **Hardware Vault Isolation**: Isolated secret storage for `zalo_bot_token` and `zalo_bot_tokens.<account_id>`.

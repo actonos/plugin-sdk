@@ -156,10 +156,12 @@ type OutboundMessage struct {
 
 // HTTPRequest represents a sandboxed outbound HTTP request.
 type HTTPRequest struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
+	Method     string            `json:"method"`
+	URL        string            `json:"url"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body,omitempty"`
+	BodyBase64 string            `json:"body_base64,omitempty"`
+	Timeout    int               `json:"timeout_seconds,omitempty"`
 }
 
 // HTTPResponse represents the response returned from the Host HTTP proxy.

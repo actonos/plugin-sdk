@@ -277,7 +277,7 @@ func sendTelegramFile(ctx sdk.Context, token, chatID string, msg sdk.OutboundMes
 		return fmt.Errorf("encoding telegram file upload: %w", err)
 	}
 	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method)
-	resp, err := ctx.HTTP().Post(reqURL, contentType, body)
+	resp, err := ctx.HTTP().PostBinary(reqURL, contentType, body)
 	if err != nil {
 		return fmt.Errorf("telegram file upload failed: %w", err)
 	}

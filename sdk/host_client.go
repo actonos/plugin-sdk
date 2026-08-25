@@ -1,9 +1,11 @@
 package sdk
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/actonos/plugin-sdk/sdk/abi"
 )
@@ -32,13 +34,13 @@ func NewContext() Context {
 	}
 }
 
-func (c *defaultContext) HTTP() HTTPClient     { return c.http }
-func (c *defaultContext) WS() WebSocketClient  { return c.ws }
-func (c *defaultContext) Config() ConfigStore   { return c.config }
-func (c *defaultContext) Vault() VaultClient   { return c.vault }
-func (c *defaultContext) Storage() KVStorage   { return c.storage }
-func (c *defaultContext) EventBus() EventBus   { return c.eventBus }
-func (c *defaultContext) Log() Logger          { return c.logger }
+func (c *defaultContext) HTTP() HTTPClient    { return c.http }
+func (c *defaultContext) WS() WebSocketClient { return c.ws }
+func (c *defaultContext) Config() ConfigStore { return c.config }
+func (c *defaultContext) Vault() VaultClient  { return c.vault }
+func (c *defaultContext) Storage() KVStorage  { return c.storage }
+func (c *defaultContext) EventBus() EventBus  { return c.eventBus }
+func (c *defaultContext) Log() Logger         { return c.logger }
 
 // --- HTTP Client Implementation ---
 
@@ -73,6 +75,20 @@ func (h *defaultHTTPClient) Post(url string, contentType string, body string) (*
 		URL:     url,
 		Headers: headers,
 		Body:    body,
+	})
+}
+
+func (h *defaultHTTPClient) PostBinary(url string, contentType string, body []byte) (*HTTPResponse, error) {
+	headers := make(map[string]string)
+	if contentType != "" {
+		headers["Content-Type"] = contentType
+	}
+	return h.Do(HTTPRequest{
+		Method:     "POST",
+		URL:        url,
+		Headers:    headers,
+		BodyBase64: base64.StdEncoding.EncodeToString(body),
+		Timeout:    60,
 	})
 }
 
@@ -112,36 +128,40 @@ func (h *defaultHTTPClient) DoWithAuth(method, url, authHeader string, headers m
 		mergedHeaders["Authorization"] = authHeader
 	}
 
-	bodyStr := ""
+	req := HTTPRequest{
+		Method:  method,
+		URL:     url,
+		Headers: mergedHeaders,
+		Timeout: 60,
+	}
 	if body != nil {
 		switch b := body.(type) {
-		case string:
-			bodyStr = b
 		case []byte:
-			bodyStr = string(b)
+			req.BodyBase64 = base64.StdEncoding.EncodeToString(b)
+		case string:
+			req.Body = b
 		default:
 			marshaled, err := json.Marshal(b)
 			if err != nil {
 				return nil, fmt.Errorf("marshaling body: %w", err)
 			}
-			bodyStr = string(marshaled)
+			req.Body = string(marshaled)
 			if mergedHeaders["Content-Type"] == "" {
-				mergedHeaders["Content-Type"] = "application/json"
+				req.Headers["Content-Type"] = "application/json"
 			}
 		}
 	}
 
-	return h.Do(HTTPRequest{
-		Method:  method,
-		URL:     url,
-		Headers: mergedHeaders,
-		Body:    bodyStr,
-	})
+	return h.Do(req)
 }
 
 func (h *defaultHTTPClient) Do(req HTTPRequest) (*HTTPResponse, error) {
 	if req.Method == "" {
 		req.Method = "GET"
+	}
+	if req.BodyBase64 == "" && req.Body != "" && !utf8.ValidString(req.Body) {
+		req.BodyBase64 = base64.StdEncoding.EncodeToString([]byte(req.Body))
+		req.Body = ""
 	}
 	reqBytes, err := json.Marshal(req)
 	if err != nil {

@@ -20,6 +20,8 @@ WASM ABI remains `1.0.0`. Extra JSON fields are `omitempty`; older hosts ignore 
   - `kind` (`text` | `typing` | `reaction` | `media`)
   - `message_id`, `chat_id`, `thread_id`, `reply_to_id`, `reaction`, `typing`, `action`
   - Host-forwarded files: `file_name`, `mime_type`, `file_data` (`msg.AttachedFile()`, `sdk.EncodeMultipart`)
+  - Binary HTTP uploads use `body_base64` so PDF/Office bytes are not corrupted by JSON UTF-8 string encoding
+  - Zalo media uses JSON (`photo`/`document`/`voice` as HTTPS URL or data URI). HTTP 200 with `"ok": false` is a send failure; Telegram-style multipart is not used.
 - `sdk.ChannelAccount`, `Normalize()`, `ApplyInboundEnvelope()`, and `MapReactionForPlatform()` so plugins and the host share one contract.
 - `acton-plugin new --type=channel` scaffolds the same account schema.
 

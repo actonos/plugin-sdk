@@ -103,7 +103,7 @@ func (c *MyChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error 
         if err != nil {
             return err
         }
-        _, err = ctx.HTTP().Post("https://api.mychat.com/upload", contentType, body)
+        _, err = ctx.HTTP().PostBinary("https://api.mychat.com/upload", contentType, body)
         return err
     }
     return ctx.HTTP().PostJSONWithBearer("https://api.mychat.com/send", token, map[string]any{

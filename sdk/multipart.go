@@ -9,27 +9,29 @@ import (
 )
 
 // EncodeMultipart builds a multipart/form-data body the host HTTP proxy can POST.
-func EncodeMultipart(fields map[string]string, fileField, fileName string, data []byte) (contentType, body string, err error) {
+// The body is raw bytes and must be sent with PostBinary / body_base64 so PDF
+// and other binary files are not corrupted by JSON UTF-8 string encoding.
+func EncodeMultipart(fields map[string]string, fileField, fileName string, data []byte) (contentType string, body []byte, err error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 	for key, value := range fields {
 		if err := writer.WriteField(key, value); err != nil {
-			return "", "", fmt.Errorf("writing multipart field %s: %w", key, err)
+			return "", nil, fmt.Errorf("writing multipart field %s: %w", key, err)
 		}
 	}
 	if fileField != "" {
 		part, err := writer.CreateFormFile(fileField, fileName)
 		if err != nil {
-			return "", "", fmt.Errorf("creating multipart file field: %w", err)
+			return "", nil, fmt.Errorf("creating multipart file field: %w", err)
 		}
 		if _, err := part.Write(data); err != nil {
-			return "", "", fmt.Errorf("writing multipart file: %w", err)
+			return "", nil, fmt.Errorf("writing multipart file: %w", err)
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return "", "", fmt.Errorf("closing multipart body: %w", err)
+		return "", nil, fmt.Errorf("closing multipart body: %w", err)
 	}
-	return writer.FormDataContentType(), buf.String(), nil
+	return writer.FormDataContentType(), buf.Bytes(), nil
 }
 
 // FileKind classifies a host-forwarded file for platform send APIs.

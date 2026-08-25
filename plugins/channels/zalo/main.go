@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -700,13 +701,13 @@ func sendZaloPhoto(ctx sdk.Context, token, chatID, photoURL, caption, parseMode,
 		}
 	}
 
-	if resp.Status != 200 {
-		return fmt.Errorf("zalo sendPhoto returned status %d: %s", resp.Status, resp.Body)
-	}
-	return nil
+	return checkZaloAPIResponse(resp, "sendPhoto")
 }
 
 func sendZaloFile(ctx sdk.Context, token, chatID, caption, replyToID, name, mime string, data []byte) error {
+	// Zalo Bot Platform media APIs take JSON string URLs (not Telegram-style
+	// multipart). Local host file_data is sent as a data URI so Zalo can ingest
+	// the bytes without a public HTTP host. HTTP 200 with ok=false must fail.
 	kind := sdk.FileKind(name, mime)
 	method, field := "sendDocument", "document"
 	switch kind {
@@ -715,27 +716,82 @@ func sendZaloFile(ctx sdk.Context, token, chatID, caption, replyToID, name, mime
 	case "voice":
 		method, field = "sendVoice", "voice"
 	}
-	fields := map[string]string{"chat_id": chatID}
+	if strings.TrimSpace(mime) == "" {
+		mime = mimeFromZaloKind(kind, name)
+	}
+	dataURI := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+	payload := map[string]any{
+		"chat_id": chatID,
+		field:     dataURI,
+	}
 	if caption != "" {
-		fields["caption"] = caption
+		payload["caption"] = caption
 	}
 	if name != "" {
-		fields["file_name"] = name
+		payload["file_name"] = name
 	}
+	if mime != "" {
+		payload["mime_type"] = mime
+	}
+	payload["size"] = len(data)
 	if replyToID != "" {
-		fields["reply_to_message_id"] = replyToID
-	}
-	contentType, body, err := sdk.EncodeMultipart(fields, field, name, data)
-	if err != nil {
-		return fmt.Errorf("encoding zalo file upload: %w", err)
+		payload["reply_to_message_id"] = replyToID
 	}
 	reqURL := fmt.Sprintf("%s/bot%s/%s", defaultZaloBotAPIBase, token, method)
-	resp, err := ctx.HTTP().Post(reqURL, contentType, body)
+	ctx.Log().Info("Sending Zalo media from host file_data", "method", method, "file_name", name, "bytes", len(data), "chat_id", chatID)
+	resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, "", map[string]string{"Content-Type": "application/json"}, payload)
 	if err != nil {
-		return fmt.Errorf("zalo file upload failed: %w", err)
+		return fmt.Errorf("zalo %s network error: %w", method, err)
 	}
-	if resp.Status != 200 {
-		return fmt.Errorf("zalo file upload returned HTTP %d: %s", resp.Status, resp.Body)
+	if err := checkZaloAPIResponse(resp, method); err != nil {
+		return err
+	}
+	_ = ctx.EventBus().Emit("channel.zalo.sent", map[string]string{
+		"chat_id":   chatID,
+		"status":    "sent",
+		"file_name": name,
+		"method":    method,
+	})
+	return nil
+}
+
+func mimeFromZaloKind(kind, name string) string {
+	switch kind {
+	case "photo":
+		return "image/jpeg"
+	case "voice":
+		return "audio/aac"
+	case "video":
+		return "video/mp4"
+	default:
+		if strings.HasSuffix(strings.ToLower(name), ".pdf") {
+			return "application/pdf"
+		}
+		return "application/octet-stream"
+	}
+}
+
+func checkZaloAPIResponse(resp *sdk.HTTPResponse, action string) error {
+	if resp == nil {
+		return fmt.Errorf("zalo %s: empty response", action)
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return fmt.Errorf("zalo %s returned HTTP %d: %s", action, resp.Status, strings.TrimSpace(resp.Body))
+	}
+	var apiResp struct {
+		OK          bool   `json:"ok"`
+		ErrorCode   int    `json:"error_code,omitempty"`
+		Description string `json:"description,omitempty"`
+	}
+	if err := resp.JSON(&apiResp); err != nil {
+		return fmt.Errorf("zalo %s returned non-JSON body: %s", action, strings.TrimSpace(resp.Body))
+	}
+	if !apiResp.OK {
+		desc := strings.TrimSpace(apiResp.Description)
+		if desc == "" {
+			desc = strings.TrimSpace(resp.Body)
+		}
+		return fmt.Errorf("zalo %s rejected the file: %s (code %d)", action, desc, apiResp.ErrorCode)
 	}
 	return nil
 }
@@ -766,10 +822,7 @@ func sendZaloDocument(ctx sdk.Context, token, chatID, documentURL, caption, file
 		}
 	}
 
-	if resp.Status != 200 {
-		return fmt.Errorf("zalo sendDocument returned status %d: %s", resp.Status, resp.Body)
-	}
-	return nil
+	return checkZaloAPIResponse(resp, "sendDocument")
 }
 
 func sendZaloVoice(ctx sdk.Context, token, chatID, voiceURL, caption, replyToID string) error {
@@ -785,10 +838,7 @@ func sendZaloVoice(ctx sdk.Context, token, chatID, voiceURL, caption, replyToID 
 	if err != nil {
 		return fmt.Errorf("zalo sendVoice network error: %w", err)
 	}
-	if resp.Status != 200 {
-		return fmt.Errorf("zalo sendVoice returned status %d: %s", resp.Status, resp.Body)
-	}
-	return nil
+	return checkZaloAPIResponse(resp, "sendVoice")
 }
 
 func stripMarkdown(input string) string {

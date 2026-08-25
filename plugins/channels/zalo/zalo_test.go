@@ -5,11 +5,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/actonos/plugin-sdk/host"
 	"github.com/actonos/plugin-sdk/sdk"
 )
+
+func TestCheckZaloAPIResponse(t *testing.T) {
+	if err := checkZaloAPIResponse(&sdk.HTTPResponse{Status: 200, Body: `{"ok":true,"result":{"message_id":"1"}}`}, "sendDocument"); err != nil {
+		t.Fatalf("ok true: %v", err)
+	}
+	err := checkZaloAPIResponse(&sdk.HTTPResponse{Status: 200, Body: `{"ok":false,"error_code":400,"description":"document is required"}`}, "sendDocument")
+	if err == nil || !strings.Contains(err.Error(), "document is required") {
+		t.Fatalf("expected API rejection, got %v", err)
+	}
+}
 
 func TestZaloBotPlatformPluginWasm(t *testing.T) {
 	wasmPath := filepath.Join(t.TempDir(), "plugin.wasm")
