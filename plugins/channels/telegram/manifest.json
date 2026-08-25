@@ -1,9 +1,9 @@
 {
   "id": "channel-telegram",
-  "name": "Telegram Bot Channel",
-  "version": "1.0.0",
+  "name": "Telegram",
+  "version": "1.1.0",
   "description": "Telegram Bot integration for ActonOS AI agents with MarkdownV2, multi-bot accounts, and agent routing",
-  "author": "ActonOS Core Team",
+  "author": "ActonOS",
   "license": "MIT",
   "capabilities": [
     "channel"
@@ -33,23 +33,6 @@
   "config_schema": {
     "type": "object",
     "properties": {
-      "telegram_bot_token": {
-        "type": "string",
-        "title": "Telegram Bot Token",
-        "description": "Primary Bot Token from @BotFather (e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ)",
-        "x-secret": true,
-        "x-ui-widget": "password",
-        "x-ui-group": "Primary Bot Settings",
-        "x-ui-placeholder": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
-      },
-      "default_agent": {
-        "type": "string",
-        "title": "Default Target Agent",
-        "description": "Default ActonOS agent to dispatch incoming messages when no @mention is present",
-        "x-ui-widget": "agent-selector",
-        "x-ui-group": "Primary Bot Settings",
-        "x-ui-placeholder": "agent-support"
-      },
       "poll_interval_seconds": {
         "type": "integer",
         "title": "Polling Interval (seconds)",
@@ -61,43 +44,95 @@
       },
       "accounts": {
         "type": "array",
-        "title": "Additional Bot Accounts (Multi-Bot)",
-        "description": "Configure additional Telegram bot instances for different departments or teams",
-        "x-ui-group": "Advanced Multi-Bot Accounts",
+        "title": "Bot Accounts",
+        "description": "Configure one or multiple Telegram bot instances",
+        "minItems": 1,
+        "x-ui-group": "Bot Accounts",
         "items": {
           "type": "object",
           "required": [
             "account_id",
-            "bot_token"
+            "bot_token",
+            "default_agent"
           ],
           "properties": {
             "account_id": {
               "type": "string",
               "title": "Account ID",
-              "description": "Unique identifier for this bot instance",
+              "description": "Unique identifier for this bot instance used for routing and session isolation",
               "pattern": "^[a-z0-9_-]+$",
-              "x-ui-placeholder": "e.g. support_bot or devops_bot"
+              "x-ui-placeholder": "e.g. support_bot",
+              "x-order": 1
             },
             "display_name": {
               "type": "string",
               "title": "Display Name",
               "description": "Friendly label for this bot account",
-              "x-ui-placeholder": "Customer Support Bot"
+              "x-ui-placeholder": "Customer Support Bot",
+              "x-order": 2
             },
             "bot_token": {
               "type": "string",
               "title": "Telegram Bot Token",
-              "description": "Bot Token from @BotFather",
+              "description": "Bot Token from @BotFather (securely stored in Hardware Vault)",
               "x-secret": true,
               "x-ui-widget": "password",
-              "x-ui-placeholder": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+              "x-ui-placeholder": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ",
+              "x-order": 3
             },
             "default_agent": {
               "type": "string",
               "title": "Default Target Agent",
-              "description": "Default ActonOS agent for this bot instance",
+              "description": "Default ActonOS agent to dispatch incoming messages when no explicit @mention is present",
               "x-ui-widget": "agent-selector",
-              "x-ui-placeholder": "agent-support"
+              "x-ui-placeholder": "agent-support",
+              "x-order": 4
+            },
+            "listen_target": {
+              "type": "string",
+              "title": "Listen Chat ID",
+              "description": "Optional Telegram chat ID to restrict polling (leave empty to receive all chats)",
+              "x-ui-placeholder": "-1001234567890",
+              "x-order": 5
+            },
+            "enable_typing_indicator": {
+              "type": "boolean",
+              "title": "Live Typing Indicator",
+              "description": "Broadcast sendChatAction(typing) while the agent generates a reply",
+              "default": true,
+              "x-order": 6
+            },
+            "enable_ack_reaction": {
+              "type": "boolean",
+              "title": "Acknowledge with Reaction",
+              "description": "React to the user's message via setMessageReaction to acknowledge receipt",
+              "default": true,
+              "x-order": 7
+            },
+            "enable_reply_quote": {
+              "type": "boolean",
+              "title": "Quote / Thread Reply",
+              "description": "Attach outbound replies with reply_to_message_id",
+              "default": true,
+              "x-order": 8
+            },
+            "ack_reaction_emoji": {
+              "type": "string",
+              "title": "Acknowledgement Emoji",
+              "default": "👀",
+              "x-order": 9
+            },
+            "parse_mode": {
+              "type": "string",
+              "title": "Parse Mode",
+              "description": "Rich text parser for outbound messages",
+              "enum": [
+                "Markdown",
+                "MarkdownV2",
+                "HTML"
+              ],
+              "default": "Markdown",
+              "x-order": 10
             }
           }
         }

@@ -1,9 +1,9 @@
 {
   "id": "channel-whatsapp",
-  "name": "WhatsApp Cloud Channel",
-  "version": "1.0.0",
+  "name": "WhatsApp",
+  "version": "1.1.0",
   "description": "WhatsApp Business Cloud API integration for ActonOS AI agents with text, template messaging, and agent routing",
-  "author": "ActonOS Core Team",
+  "author": "ActonOS",
   "license": "MIT",
   "capabilities": [
     "channel"
@@ -33,26 +33,98 @@
   "config_schema": {
     "type": "object",
     "properties": {
-      "phone_number_id": {
-        "type": "string",
-        "title": "Default Phone Number ID",
-        "description": "WhatsApp Cloud API Phone Number ID from Meta Developer Console",
-        "x-ui-placeholder": "100609... "
+      "poll_interval_seconds": {
+        "type": "integer",
+        "title": "Polling Interval (seconds)",
+        "description": "Delay in seconds between webhook-queue drain cycles",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 60,
+        "x-ui-group": "General Settings"
       },
-      "access_token": {
-        "type": "string",
-        "title": "System User Access Token",
-        "description": "Meta Graph API Permanent Access Token with whatsapp_business_messaging permission",
-        "x-secret": true,
-        "x-ui-widget": "password",
-        "x-ui-placeholder": "EAAG..."
-      },
-      "default_agent": {
-        "type": "string",
-        "title": "Default Target Agent",
-        "description": "Default ActonOS agent to handle incoming WhatsApp messages",
-        "x-ui-widget": "agent-selector",
-        "x-ui-placeholder": "agent-support"
+      "accounts": {
+        "type": "array",
+        "title": "Bot Accounts",
+        "description": "Configure one or multiple WhatsApp Cloud phone numbers",
+        "minItems": 1,
+        "x-ui-group": "Bot Accounts",
+        "items": {
+          "type": "object",
+          "required": [
+            "account_id",
+            "access_token",
+            "phone_number_id",
+            "default_agent"
+          ],
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "title": "Account ID",
+              "description": "Unique identifier for this bot instance used for routing and session isolation",
+              "pattern": "^[a-z0-9_-]+$",
+              "x-ui-placeholder": "e.g. support_bot",
+              "x-order": 1
+            },
+            "display_name": {
+              "type": "string",
+              "title": "Display Name",
+              "description": "Friendly label for this WhatsApp number",
+              "x-ui-placeholder": "Customer Support WA",
+              "x-order": 2
+            },
+            "access_token": {
+              "type": "string",
+              "title": "System User Access Token",
+              "description": "Meta Graph API permanent access token with whatsapp_business_messaging permission",
+              "x-secret": true,
+              "x-ui-widget": "password",
+              "x-ui-placeholder": "EAAG...",
+              "x-order": 3
+            },
+            "phone_number_id": {
+              "type": "string",
+              "title": "Phone Number ID",
+              "description": "WhatsApp Cloud API Phone Number ID from Meta Developer Console",
+              "x-ui-placeholder": "100609...",
+              "x-order": 3
+            },
+            "default_agent": {
+              "type": "string",
+              "title": "Default Target Agent",
+              "description": "Default ActonOS agent to dispatch incoming messages when no explicit @mention is present",
+              "x-ui-widget": "agent-selector",
+              "x-ui-placeholder": "agent-support",
+              "x-order": 4
+            },
+            "enable_typing_indicator": {
+              "type": "boolean",
+              "title": "Live Typing Indicator",
+              "description": "Mark the inbound message as read and show a typing indicator while the agent replies",
+              "default": true,
+              "x-order": 6
+            },
+            "enable_ack_reaction": {
+              "type": "boolean",
+              "title": "Acknowledge with Reaction",
+              "description": "React to the user's WhatsApp message to acknowledge receipt",
+              "default": true,
+              "x-order": 7
+            },
+            "enable_reply_quote": {
+              "type": "boolean",
+              "title": "Quote / Thread Reply",
+              "description": "Attach outbound replies with context.message_id quoting the user's prompt",
+              "default": true,
+              "x-order": 8
+            },
+            "ack_reaction_emoji": {
+              "type": "string",
+              "title": "Acknowledgement Emoji",
+              "default": "👀",
+              "x-order": 9
+            }
+          }
+        }
       }
     }
   }

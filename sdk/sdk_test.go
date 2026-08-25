@@ -331,4 +331,126 @@ func TestWebSocketClient(t *testing.T) {
 	}
 }
 
+func TestInboundEnvelopeNormalize(t *testing.T) {
+	msg := sdk.NewInboundMessage("telegram", "", "42", "Alice", "hello")
+	msg.Metadata["chat_id"] = "888"
+	msg.Metadata["message_id"] = "99"
+	msg.Metadata["ts"] = "1710000000.1"
+	msg.Normalize()
 
+	if msg.AccountID != "default" {
+		t.Errorf("expected default account_id, got %q", msg.AccountID)
+	}
+	if msg.ChatID != "888" {
+		t.Errorf("expected ChatID 888, got %q", msg.ChatID)
+	}
+	if msg.MessageID != "99" {
+		t.Errorf("expected MessageID 99 (message_id wins over ts), got %q", msg.MessageID)
+	}
+	if msg.Kind != sdk.MessageKindText {
+		t.Errorf("expected kind text, got %q", msg.Kind)
+	}
+	if msg.Metadata["channel_id"] != "888" {
+		t.Errorf("expected channel_id alias, got %q", msg.Metadata["channel_id"])
+	}
+	if msg.Metadata["account_id"] != "default" {
+		t.Errorf("expected account_id mirrored into metadata")
+	}
+}
+
+func TestOutboundEnvelopeAliases(t *testing.T) {
+	msg := sdk.OutboundMessage{
+		ChannelID: "discord",
+		Recipient: "chan-1",
+		Metadata: map[string]string{
+			"account_id":      "bot_cskh",
+			"reply_to_msg_id": "m-9",
+			"reaction":        "👀",
+			"typing":          "true",
+		},
+		Content: "done",
+	}
+	msg.Normalize()
+
+	if msg.AccountID != "bot_cskh" {
+		t.Errorf("account_id: %q", msg.AccountID)
+	}
+	if msg.ChatID != "chan-1" {
+		t.Errorf("chat_id should fall back to recipient, got %q", msg.ChatID)
+	}
+	if msg.ReplyToID != "m-9" {
+		t.Errorf("reply_to_id: %q", msg.ReplyToID)
+	}
+	if msg.Reaction != "👀" {
+		t.Errorf("reaction: %q", msg.Reaction)
+	}
+	if !msg.WantsTyping() {
+		t.Error("expected WantsTyping from metadata typing=true")
+	}
+	if msg.Kind != sdk.MessageKindText {
+		t.Errorf("content+typing should stay kind text, got %q", msg.Kind)
+	}
+
+	typingOnly := sdk.OutboundMessage{
+		ChannelID: "telegram",
+		Recipient: "888",
+		Metadata:  map[string]string{"typing": "true"},
+	}
+	typingOnly.Normalize()
+	if typingOnly.Kind != sdk.MessageKindTyping {
+		t.Errorf("expected typing kind, got %q", typingOnly.Kind)
+	}
+	if !typingOnly.IsTypingOnly() {
+		t.Error("expected IsTypingOnly")
+	}
+
+	reactionOnly := sdk.OutboundMessage{
+		ChannelID: "slack",
+		Recipient: "C1",
+		Reaction:  "👍",
+	}
+	reactionOnly.Normalize()
+	if reactionOnly.Kind != sdk.MessageKindReaction {
+		t.Errorf("expected reaction kind, got %q", reactionOnly.Kind)
+	}
+}
+
+func TestChannelAccountFeatureDefaults(t *testing.T) {
+	var unset sdk.ChannelAccountFeatures
+	if !unset.TypingEnabled() || !unset.AckReactionEnabled() || !unset.ReplyQuoteEnabled() {
+		t.Fatal("omitted flags must default to true")
+	}
+	if unset.ReactionEmoji() != sdk.DefaultAckReactionEmoji {
+		t.Errorf("default emoji: %q", unset.ReactionEmoji())
+	}
+
+	off := false
+	disabled := sdk.ChannelAccountFeatures{EnableTypingIndicator: &off, EnableAckReaction: &off, EnableReplyQuote: &off, AckReactionEmoji: "👍"}
+	if disabled.TypingEnabled() || disabled.AckReactionEnabled() || disabled.ReplyQuoteEnabled() {
+		t.Fatal("explicit false must win")
+	}
+	if disabled.ReactionEmoji() != "👍" {
+		t.Errorf("custom emoji: %q", disabled.ReactionEmoji())
+	}
+
+	acc := sdk.ChannelAccount{ListenChannelID: "C0123"}
+	if acc.ResolveListenTarget() != "C0123" {
+		t.Errorf("listen alias: %q", acc.ResolveListenTarget())
+	}
+	acc.ListenTarget = "C999"
+	if acc.ResolveListenTarget() != "C999" {
+		t.Errorf("listen_target should win: %q", acc.ResolveListenTarget())
+	}
+}
+
+func TestMapReactionForPlatform(t *testing.T) {
+	if got := sdk.MapReactionForPlatform("slack", "👀"); got != "eyes" {
+		t.Errorf("slack 👀 -> %q", got)
+	}
+	if got := sdk.MapReactionForPlatform("telegram", "eyes"); got != "👀" {
+		t.Errorf("telegram eyes -> %q", got)
+	}
+	if got := sdk.MapReactionForPlatform("discord", "👀"); got != "👀" {
+		t.Errorf("discord 👀 -> %q", got)
+	}
+}

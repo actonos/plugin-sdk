@@ -26,19 +26,19 @@ const (
 
 // PluginManifest defines the complete metadata and permission declaration of a plugin.
 type PluginManifest struct {
-	ID           string           `json:"id"`
-	Name         string           `json:"name"`
-	Version      string           `json:"version"`
-	Description  string           `json:"description,omitempty"`
-	Author       string           `json:"author,omitempty"`
-	License      string           `json:"license,omitempty"`
-	Capabilities []Capability     `json:"capabilities"`
-	Permissions  *Permissions     `json:"permissions,omitempty"`
-	Tools        []ToolInfo       `json:"tools,omitempty"`
-	Channels     []ChannelInfo    `json:"channels,omitempty"`
-	Connectors   []ConnectorInfo  `json:"connectors,omitempty"`
-	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
-	Config       map[string]any   `json:"config,omitempty"`
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Version      string          `json:"version"`
+	Description  string          `json:"description,omitempty"`
+	Author       string          `json:"author,omitempty"`
+	License      string          `json:"license,omitempty"`
+	Capabilities []Capability    `json:"capabilities"`
+	Permissions  *Permissions    `json:"permissions,omitempty"`
+	Tools        []ToolInfo      `json:"tools,omitempty"`
+	Channels     []ChannelInfo   `json:"channels,omitempty"`
+	Connectors   []ConnectorInfo `json:"connectors,omitempty"`
+	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
+	Config       map[string]any  `json:"config,omitempty"`
 }
 
 // Permissions declares the sandbox access boundaries requested by the plugin.
@@ -104,7 +104,19 @@ func NewResultError(errMessage string) *ToolResult {
 	}
 }
 
+// MessageKind identifies the semantic type of a channel event.
+type MessageKind string
+
+const (
+	MessageKindText     MessageKind = "text"
+	MessageKindTyping   MessageKind = "typing"
+	MessageKindReaction MessageKind = "reaction"
+	MessageKindMedia    MessageKind = "media"
+)
+
 // InboundMessage represents an incoming message received from a chat channel.
+// Canonical envelope fields (Kind, MessageID, ChatID, ThreadID, Timestamp, Reaction)
+// are the host contract. Metadata keeps platform-specific extras and backward-compatible aliases.
 type InboundMessage struct {
 	ChannelID   string            `json:"channel_id"`
 	AccountID   string            `json:"account_id"`
@@ -113,15 +125,29 @@ type InboundMessage struct {
 	TargetAgent string            `json:"target_agent,omitempty"`
 	MentionText string            `json:"mention_text,omitempty"`
 	Content     string            `json:"content"`
+	Kind        MessageKind       `json:"kind,omitempty"`
+	MessageID   string            `json:"message_id,omitempty"`
+	ChatID      string            `json:"chat_id,omitempty"`
+	ThreadID    string            `json:"thread_id,omitempty"`
+	Timestamp   string            `json:"timestamp,omitempty"`
+	Reaction    string            `json:"reaction,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // OutboundMessage represents a message sent to a channel recipient.
+// Canonical envelope fields are the host contract. Metadata aliases remain supported.
 type OutboundMessage struct {
 	ChannelID string            `json:"channel_id"`
 	AccountID string            `json:"account_id"`
 	Recipient string            `json:"recipient"`
 	Content   string            `json:"content"`
+	Kind      MessageKind       `json:"kind,omitempty"`
+	ChatID    string            `json:"chat_id,omitempty"`
+	ReplyToID string            `json:"reply_to_id,omitempty"`
+	ThreadID  string            `json:"thread_id,omitempty"`
+	Reaction  string            `json:"reaction,omitempty"`
+	Action    string            `json:"action,omitempty"`
+	Typing    bool              `json:"typing,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 

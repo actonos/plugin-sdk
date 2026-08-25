@@ -7,10 +7,21 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
+const whatsappGraphAPI = "https://graph.facebook.com/v21.0"
+
 type WhatsAppConfig struct {
+	PollIntervalSeconds int               `json:"poll_interval_seconds"`
+	Accounts            []WhatsAppAccount `json:"accounts"`
+	// Legacy root-level fields kept for backward-compatible config binding.
 	PhoneNumberID string `json:"phone_number_id"`
 	AccessToken   string `json:"access_token,omitempty"`
 	DefaultAgent  string `json:"default_agent"`
+}
+
+type WhatsAppAccount struct {
+	sdk.ChannelAccount
+	AccessToken   string `json:"access_token,omitempty"`
+	PhoneNumberID string `json:"phone_number_id,omitempty"`
 }
 
 type WhatsAppChannel struct {
@@ -21,10 +32,16 @@ type WhatsAppWebhookPayload struct {
 	Entry []struct {
 		Changes []struct {
 			Value struct {
+				MessagingProduct string `json:"messaging_product"`
+				Metadata         struct {
+					DisplayPhoneNumber string `json:"display_phone_number"`
+					PhoneNumberID      string `json:"phone_number_id"`
+				} `json:"metadata"`
 				Messages []struct {
-					From string `json:"from"`
-					ID   string `json:"id"`
-					Text struct {
+					From      string `json:"from"`
+					ID        string `json:"id"`
+					Timestamp string `json:"timestamp"`
+					Text      struct {
 						Body string `json:"body"`
 					} `json:"text"`
 				} `json:"messages"`
@@ -40,33 +57,35 @@ type WhatsAppWebhookPayload struct {
 }
 
 func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
-	token, err := ctx.Vault().GetSecret("whatsapp_access_token")
-	if err != nil || token == "" {
-		return fmt.Errorf("missing whatsapp_access_token in vault: %w", err)
+	acc, token, phoneID, err := resolveWhatsAppAccount(ctx, msg.AccountID)
+	if err != nil {
+		return err
 	}
 
-	phoneID := msg.Metadata["phone_number_id"]
-	if phoneID == "" {
-		phoneID, _ = ctx.Vault().GetSecret("whatsapp_phone_number_id")
-	}
-	if phoneID == "" {
-		var cfg WhatsAppConfig
-		_ = ctx.Config().Bind(&cfg)
-		phoneID = cfg.PhoneNumberID
-	}
-	if phoneID == "" {
-		return fmt.Errorf("missing whatsapp_phone_number_id in vault/metadata/config")
-	}
-
-	recipient := msg.Recipient
-	if recipient == "" {
-		recipient = msg.Metadata["to"]
-	}
+	recipient := sdk.FirstNonEmpty(msg.ChatID, msg.Recipient, msg.Metadata["to"])
 	if recipient == "" {
 		return fmt.Errorf("recipient phone number is required")
 	}
 
-	reqURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/messages", phoneID)
+	if msg.WantsTyping() && acc.TypingEnabled() {
+		sendWhatsAppTyping(ctx, token, phoneID, msg.ReplyToID)
+		if msg.IsTypingOnly() {
+			return nil
+		}
+	} else if msg.IsTypingOnly() {
+		return nil
+	}
+
+	if msg.Reaction != "" && acc.AckReactionEnabled() {
+		addWhatsAppReaction(ctx, token, phoneID, recipient, msg.ReplyToID, sdk.MapReactionForPlatform("whatsapp", msg.Reaction))
+		if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+			return nil
+		}
+	} else if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+		return nil
+	}
+
+	reqURL := fmt.Sprintf("%s/%s/messages", whatsappGraphAPI, phoneID)
 	chunks := sdk.SplitMessage(msg.Content, 3900)
 
 	for i, chunk := range chunks {
@@ -79,6 +98,9 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 				"body": chunk,
 			},
 		}
+		if acc.ReplyQuoteEnabled() && i == 0 && msg.ReplyToID != "" {
+			payload["context"] = map[string]string{"message_id": msg.ReplyToID}
+		}
 
 		resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
 		if err != nil {
@@ -90,8 +112,10 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 	}
 
 	_ = ctx.EventBus().Emit("channel.whatsapp.sent", map[string]string{
-		"recipient": recipient,
-		"status":    "sent",
+		"account_id": acc.AccountID,
+		"recipient":  recipient,
+		"chat_id":    recipient,
+		"status":     "sent",
 	})
 	return nil
 }
@@ -99,14 +123,12 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 func (w *WhatsAppChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
 	var cfg WhatsAppConfig
 	_ = ctx.Config().Bind(&cfg)
+	accounts := activeWhatsAppAccounts(cfg)
 
-	// Read pending webhook queue stored in KV storage buffer
 	rawQueue, ok, _ := ctx.Storage().Get("pending_webhook_queue")
 	if !ok || rawQueue == "" {
 		return nil, nil
 	}
-
-	// Reset queue
 	_ = ctx.Storage().Delete("pending_webhook_queue")
 
 	var payload WhatsAppWebhookPayload
@@ -122,6 +144,12 @@ func (w *WhatsAppChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 				contactsMap[contact.WaID] = contact.Profile.Name
 			}
 
+			phoneID := change.Value.Metadata.PhoneNumberID
+			acc := matchWhatsAppAccount(accounts, phoneID)
+
+			token := resolveWhatsAppToken(ctx, acc)
+			resolvedPhoneID := sdk.FirstNonEmpty(acc.PhoneNumberID, phoneID)
+
 			for _, m := range change.Value.Messages {
 				if m.Text.Body == "" {
 					continue
@@ -133,28 +161,142 @@ func (w *WhatsAppChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 				}
 
 				targetAgent, cleanText := sdk.ExtractAgentMention(m.Text.Body)
-				if targetAgent == "" && cfg.DefaultAgent != "" {
-					targetAgent = cfg.DefaultAgent
+				if targetAgent == "" && acc.DefaultAgent != "" {
+					targetAgent = acc.DefaultAgent
 				}
 
 				inbound := sdk.NewInboundMessage(
 					"whatsapp",
-					"default",
+					acc.AccountID,
 					m.From,
 					name,
 					cleanText,
 				)
 				inbound.TargetAgent = targetAgent
-				inbound.Metadata["message_id"] = m.ID
 				inbound.Metadata["from"] = m.From
+				inbound.Metadata["phone_number_id"] = resolvedPhoneID
+				sdk.ApplyInboundEnvelope(&inbound, m.From, m.ID, "", m.Timestamp)
 
 				inboundMsgs = append(inboundMsgs, inbound)
 				_ = ctx.EventBus().Emit("channel.whatsapp.received", inbound)
+
+				if token != "" && resolvedPhoneID != "" {
+					if acc.TypingEnabled() {
+						sendWhatsAppTyping(ctx, token, resolvedPhoneID, m.ID)
+					}
+					if acc.AckReactionEnabled() {
+						addWhatsAppReaction(ctx, token, resolvedPhoneID, m.From, m.ID, sdk.MapReactionForPlatform("whatsapp", acc.ReactionEmoji()))
+					}
+				}
 			}
 		}
 	}
 
 	return inboundMsgs, nil
+}
+
+func sendWhatsAppTyping(ctx sdk.Context, token, phoneID, messageID string) {
+	if token == "" || phoneID == "" || messageID == "" {
+		return
+	}
+	reqURL := fmt.Sprintf("%s/%s/messages", whatsappGraphAPI, phoneID)
+	payload := map[string]any{
+		"messaging_product": "whatsapp",
+		"status":            "read",
+		"message_id":        messageID,
+		"typing_indicator": map[string]string{
+			"type": "text",
+		},
+	}
+	_, _ = ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
+}
+
+func addWhatsAppReaction(ctx sdk.Context, token, phoneID, recipient, messageID, emoji string) {
+	if token == "" || phoneID == "" || recipient == "" || messageID == "" || emoji == "" {
+		return
+	}
+	reqURL := fmt.Sprintf("%s/%s/messages", whatsappGraphAPI, phoneID)
+	payload := map[string]any{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                recipient,
+		"type":              "reaction",
+		"reaction": map[string]string{
+			"message_id": messageID,
+			"emoji":      emoji,
+		},
+	}
+	_, _ = ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
+}
+
+func activeWhatsAppAccounts(cfg WhatsAppConfig) []WhatsAppAccount {
+	if len(cfg.Accounts) > 0 {
+		return cfg.Accounts
+	}
+	return []WhatsAppAccount{
+		{
+			ChannelAccount: sdk.ChannelAccount{
+				AccountID:    "default",
+				DisplayName:  "Default WhatsApp Cloud",
+				DefaultAgent: cfg.DefaultAgent,
+			},
+			AccessToken:   cfg.AccessToken,
+			PhoneNumberID: cfg.PhoneNumberID,
+		},
+	}
+}
+
+func matchWhatsAppAccount(accounts []WhatsAppAccount, phoneNumberID string) WhatsAppAccount {
+	if phoneNumberID != "" {
+		for _, acc := range accounts {
+			if acc.PhoneNumberID == phoneNumberID {
+				return acc
+			}
+		}
+	}
+	if len(accounts) > 0 {
+		return accounts[0]
+	}
+	return WhatsAppAccount{ChannelAccount: sdk.ChannelAccount{AccountID: "default"}}
+}
+
+func resolveWhatsAppToken(ctx sdk.Context, acc WhatsAppAccount) string {
+	return sdk.ResolveSecret(ctx, acc.AccessToken, sdk.AccountVaultKeys(acc.AccountID, "whatsapp_tokens", "whatsapp_access_token")...)
+}
+
+func resolveWhatsAppAccount(ctx sdk.Context, accountID string) (WhatsAppAccount, string, string, error) {
+	var cfg WhatsAppConfig
+	_ = ctx.Config().Bind(&cfg)
+	accounts := activeWhatsAppAccounts(cfg)
+
+	acc := WhatsAppAccount{ChannelAccount: sdk.ChannelAccount{AccountID: accountID}}
+	found := false
+	for _, a := range accounts {
+		if a.AccountID == accountID || (accountID == "default" && a.AccountID == "") {
+			acc = a
+			if acc.AccountID == "" {
+				acc.AccountID = "default"
+			}
+			found = true
+			break
+		}
+	}
+	if !found && len(accounts) == 1 && (accountID == "" || accountID == "default") {
+		acc = accounts[0]
+		if acc.AccountID == "" {
+			acc.AccountID = "default"
+		}
+	}
+
+	token := resolveWhatsAppToken(ctx, acc)
+	if token == "" {
+		return acc, "", "", fmt.Errorf("missing whatsapp_access_token for account %q", acc.AccountID)
+	}
+	phoneID := sdk.FirstNonEmpty(acc.PhoneNumberID, sdk.ResolveSecret(ctx, "", "whatsapp_phone_number_id"))
+	if phoneID == "" {
+		return acc, "", "", fmt.Errorf("missing whatsapp_phone_number_id for account %q", acc.AccountID)
+	}
+	return acc, token, phoneID, nil
 }
 
 func init() {

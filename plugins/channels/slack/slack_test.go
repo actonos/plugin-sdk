@@ -71,6 +71,9 @@ func TestSlackPluginWasm(t *testing.T) {
 	if msgs[0].Content != "check cluster health" {
 		t.Fatalf("expected clean content, got '%s'", msgs[0].Content)
 	}
+	if msgs[0].MessageID != "1710000000.000100" {
+		t.Fatalf("expected MessageID from Slack ts, got '%s'", msgs[0].MessageID)
+	}
 
 	// 2. Send outbound message
 	outMsg := sdk.NewOutboundMessage("slack", "C0123", "All cluster nodes are healthy.")

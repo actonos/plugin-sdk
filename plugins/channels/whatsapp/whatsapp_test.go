@@ -54,7 +54,7 @@ func TestWhatsAppPluginWasm(t *testing.T) {
 		]
 	}`
 
-	mockHost.MockHTTPRoute("https://graph.facebook.com/v18.0/10987654321/messages", host.HTTPMockResponse{
+	mockHost.MockHTTPRoute("https://graph.facebook.com/v21.0/10987654321/messages", host.HTTPMockResponse{
 		Status: 200,
 		Body:   `{"messaging_product": "whatsapp", "contacts": [{"input": "+84901234567", "wa_id": "+84901234567"}], "messages": [{"id": "wamid.HBgL_OUT"}]}`,
 	})
@@ -85,5 +85,11 @@ func TestWhatsAppPluginWasm(t *testing.T) {
 	}
 	if msgs[0].Content != "summarize the latest AI news" {
 		t.Fatalf("expected clean content, got '%s'", msgs[0].Content)
+	}
+	if msgs[0].ChatID != "+84901234567" {
+		t.Fatalf("expected ChatID '+84901234567', got '%s'", msgs[0].ChatID)
+	}
+	if msgs[0].MessageID != "wamid.HBgL" {
+		t.Fatalf("expected MessageID 'wamid.HBgL', got '%s'", msgs[0].MessageID)
 	}
 }

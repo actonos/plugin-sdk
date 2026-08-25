@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://actonos.dev/spec/channel-account.schema.json",
+  "title": "ActonOS Chat Channel Account",
+  "description": "Canonical account item shared by every chat channel plugin (Discord, Telegram, Slack, WhatsApp, Zalo). Plugin manifests embed these properties inside config_schema.properties.accounts.items and add platform-specific credentials.",
+  "type": "object",
+  "required": ["account_id", "default_agent"],
+  "properties": {
+    "account_id": {
+      "type": "string",
+      "title": "Account ID",
+      "description": "Unique identifier for this bot instance used for routing and session isolation",
+      "pattern": "^[a-z0-9_-]+$",
+      "x-ui-placeholder": "e.g. support_bot",
+      "x-order": 1
+    },
+    "display_name": {
+      "type": "string",
+      "title": "Display Name",
+      "description": "Friendly label for this bot account",
+      "x-ui-placeholder": "Customer Support Bot",
+      "x-order": 2
+    },
+    "default_agent": {
+      "type": "string",
+      "title": "Default Target Agent",
+      "description": "Default ActonOS agent to dispatch incoming messages when no explicit @mention is present",
+      "x-ui-widget": "agent-selector",
+      "x-ui-placeholder": "agent-support",
+      "x-order": 4
+    },
+    "listen_target": {
+      "type": "string",
+      "title": "Listen Target",
+      "description": "Optional conversation to restrict polling (Discord/Slack channel ID, Telegram chat ID). Leave empty to use the platform default.",
+      "x-order": 5
+    },
+    "enable_typing_indicator": {
+      "type": "boolean",
+      "title": "Live Typing Indicator",
+      "description": "Broadcast a typing / chat-action event while the agent generates a reply",
+      "default": true,
+      "x-order": 6
+    },
+    "enable_ack_reaction": {
+      "type": "boolean",
+      "title": "Acknowledge with Reaction",
+      "description": "React to the user's inbound message (default 👀) to acknowledge receipt",
+      "default": true,
+      "x-order": 7
+    },
+    "enable_reply_quote": {
+      "type": "boolean",
+      "title": "Quote / Thread Reply",
+      "description": "Attach outbound replies to the source message (quote, thread, or message reference)",
+      "default": true,
+      "x-order": 8
+    },
+    "ack_reaction_emoji": {
+      "type": "string",
+      "title": "Acknowledgement Emoji",
+      "description": "Emoji used for inbound acknowledgement reactions",
+      "default": "👀",
+      "x-order": 9
+    }
+  }
+}

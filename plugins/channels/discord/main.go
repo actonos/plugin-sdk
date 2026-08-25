@@ -20,13 +20,9 @@ type DiscordConfig struct {
 
 // DiscordAccount represents an individual configured Discord bot instance.
 type DiscordAccount struct {
-	AccountID       string `json:"account_id"`
-	DisplayName     string `json:"display_name"`
-	BotToken        string `json:"bot_token,omitempty"`
-	DefaultAgent    string `json:"default_agent"`
-	ListenChannelID string `json:"listen_channel_id"`
+	sdk.ChannelAccount
 	EnableEmbeds    bool   `json:"enable_embeds"`
-	EnableReactions bool   `json:"enable_reactions"`
+	DiscordBotToken string `json:"discord_bot_token,omitempty"`
 }
 
 type GatewayState struct {
@@ -68,39 +64,32 @@ type DiscordMessage struct {
 }
 
 func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
-	accountID := msg.AccountID
-	if accountID == "" {
-		accountID = msg.Metadata["account_id"]
-	}
-	if accountID == "" {
-		accountID = "default"
-	}
-
-	token, err := getBotToken(ctx, accountID)
+	acc, token, err := resolveDiscordAccount(ctx, msg.AccountID)
 	if err != nil {
 		return err
 	}
 
-	// 1. Prioritize channel_id from metadata (actual text channel), fallback to recipient
-	channelID := msg.Metadata["channel_id"]
-	if channelID == "" {
-		channelID = msg.Recipient
-	}
+	channelID := sdk.FirstNonEmpty(msg.ChatID, msg.Recipient)
 	if channelID == "" {
 		return fmt.Errorf("recipient or channel_id is required")
 	}
 
-	// 2. Handle explicit typing indicator
-	if msg.Metadata["typing"] == "true" || msg.Metadata["action"] == "typing" || msg.Content == "" {
+	if msg.WantsTyping() && acc.TypingEnabled() {
 		sendDiscordTyping(ctx, token, channelID)
+		if msg.IsTypingOnly() {
+			return nil
+		}
+	} else if msg.IsTypingOnly() {
 		return nil
 	}
 
-	// 3. Handle reactions if specified
-	if origMsgID, ok := msg.Metadata["reply_to_msg_id"]; ok && origMsgID != "" {
-		if emoji, ok := msg.Metadata["reaction"]; ok && emoji != "" {
-			addDiscordReaction(ctx, token, channelID, origMsgID, emoji)
+	if msg.Reaction != "" && acc.AckReactionEnabled() {
+		addDiscordReaction(ctx, token, channelID, msg.ReplyToID, sdk.MapReactionForPlatform("discord", msg.Reaction))
+		if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+			return nil
 		}
+	} else if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+		return nil
 	}
 
 	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", channelID)
@@ -109,6 +98,12 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 	for i, chunk := range chunks {
 		payload := map[string]any{
 			"content": chunk,
+		}
+
+		if acc.ReplyQuoteEnabled() && i == 0 && msg.ReplyToID != "" {
+			payload["message_reference"] = map[string]any{
+				"message_id": msg.ReplyToID,
+			}
 		}
 
 		// Optional Rich Embed support
@@ -169,8 +164,9 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 	}
 
 	_ = ctx.EventBus().Emit("channel.discord.sent", map[string]string{
-		"account_id": accountID,
+		"account_id": acc.AccountID,
 		"channel_id": channelID,
+		"chat_id":    channelID,
 		"status":     "sent",
 		"chunks":     strconv.Itoa(len(chunks)),
 	})
@@ -189,10 +185,11 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 		}
 		accounts = []DiscordAccount{
 			{
-				AccountID:       "default",
-				DisplayName:     "Default Discord Bot",
-				BotToken:        defaultToken,
-				EnableReactions: true,
+				ChannelAccount: sdk.ChannelAccount{
+					AccountID:   "default",
+					DisplayName: "Default Discord Bot",
+					BotToken:    defaultToken,
+				},
 			},
 		}
 	}
@@ -200,8 +197,11 @@ func (d *DiscordChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, er
 	var allInbound []sdk.InboundMessage
 
 	for _, acc := range accounts {
-		token, err := getBotToken(ctx, acc.AccountID)
-		if err != nil || token == "" {
+		if acc.AccountID == "" {
+			acc.AccountID = "default"
+		}
+		token := getBotToken(ctx, acc)
+		if token == "" {
 			continue
 		}
 
@@ -365,20 +365,21 @@ func (d *DiscordChannel) pollGatewayWebSocket(ctx sdk.Context, acc DiscordAccoun
 						finalContent,
 					)
 					inbound.TargetAgent = targetAgent
-					inbound.Metadata["channel_id"] = msg.ChannelID
-					inbound.Metadata["guild_id"] = msg.GuildID
-					inbound.Metadata["message_id"] = msg.ID
-					inbound.Metadata["account_id"] = acc.AccountID
+					if msg.GuildID != "" {
+						inbound.Metadata["guild_id"] = msg.GuildID
+					}
+					sdk.ApplyInboundEnvelope(&inbound, msg.ChannelID, msg.ID, "", "")
 
 					messages = append(messages, inbound)
 					_ = ctx.EventBus().Emit("channel.discord.received", inbound)
 					ctx.Log().Info("Discord message received", "from", msg.Author.Username, "channel_id", msg.ChannelID, "content", finalContent, "target_agent", targetAgent)
 
-					// 1. Trigger live typing indicator
-					sendDiscordTyping(ctx, token, msg.ChannelID)
-
-					// 2. React with 👀 emoji to acknowledge prompt receipt
-					addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, "👀")
+					if acc.TypingEnabled() {
+						sendDiscordTyping(ctx, token, msg.ChannelID)
+					}
+					if acc.AckReactionEnabled() {
+						addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, sdk.MapReactionForPlatform("discord", acc.ReactionEmoji()))
+					}
 				}
 			}
 		}
@@ -424,7 +425,7 @@ func (d *DiscordChannel) getOrDialGateway(ctx sdk.Context, accountID string) (sd
 }
 
 func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc DiscordAccount) ([]sdk.InboundMessage, error) {
-	listenChannelID := acc.ListenChannelID
+	listenChannelID := acc.ResolveListenTarget()
 	if listenChannelID == "" {
 		if stored, ok, _ := ctx.Storage().Get("listen_channel_id"); ok && stored != "" {
 			listenChannelID = stored
@@ -479,18 +480,17 @@ func (d *DiscordChannel) pollHTTPMessages(ctx sdk.Context, token string, acc Dis
 			finalContent,
 		)
 		inbound.TargetAgent = targetAgent
-		inbound.Metadata["channel_id"] = msg.ChannelID
-		inbound.Metadata["message_id"] = msg.ID
-		inbound.Metadata["account_id"] = acc.AccountID
+		sdk.ApplyInboundEnvelope(&inbound, msg.ChannelID, msg.ID, "", "")
 
 		inboundMsgs = append(inboundMsgs, inbound)
 		_ = ctx.EventBus().Emit("channel.discord.received", inbound)
 
-		// 1. Trigger live typing indicator
-		sendDiscordTyping(ctx, token, msg.ChannelID)
-
-		// 2. React with 👀
-		addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, "👀")
+		if acc.TypingEnabled() {
+			sendDiscordTyping(ctx, token, msg.ChannelID)
+		}
+		if acc.AckReactionEnabled() {
+			addDiscordReaction(ctx, token, msg.ChannelID, msg.ID, sdk.MapReactionForPlatform("discord", acc.ReactionEmoji()))
+		}
 	}
 
 	if newestID != lastMsgID && newestID != "" {
@@ -523,32 +523,30 @@ func addDiscordReaction(ctx sdk.Context, token string, channelID string, message
 	_, _ = ctx.HTTP().DoWithAuth("PUT", reqURL, authHeader, nil, nil)
 }
 
-func getBotToken(ctx sdk.Context, accountID string) (string, error) {
-	if accountID != "" && accountID != "default" {
-		if token, err := ctx.Vault().GetSecret("discord_bot_tokens." + accountID); err == nil && token != "" {
-			return token, nil
-		}
-		if token, err := ctx.Vault().GetSecret("discord_bot_token_" + accountID); err == nil && token != "" {
-			return token, nil
-		}
-		if token, err := ctx.Vault().GetSecret("accounts." + accountID + ".bot_token"); err == nil && token != "" {
-			return token, nil
+func getBotToken(ctx sdk.Context, acc DiscordAccount) string {
+	inline := sdk.FirstNonEmpty(acc.BotToken, acc.DiscordBotToken)
+	return sdk.ResolveSecret(ctx, inline, sdk.AccountVaultKeys(acc.AccountID, "discord_bot_tokens", "discord_bot_token", "bot_token", "token")...)
+}
+
+func resolveDiscordAccount(ctx sdk.Context, accountID string) (DiscordAccount, string, error) {
+	var cfg DiscordConfig
+	_ = ctx.Config().Bind(&cfg)
+
+	acc := DiscordAccount{ChannelAccount: sdk.ChannelAccount{AccountID: accountID}}
+	for _, a := range cfg.Accounts {
+		if a.AccountID == accountID {
+			acc = a
+			break
 		}
 	}
-
-	for _, k := range []string{"discord_bot_token", "bot_token"} {
-		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
-			return token, nil
-		}
+	if acc.AccountID == "" {
+		acc.AccountID = "default"
 	}
-
-	for _, k := range []string{"discord_bot_token", "bot_token", "token"} {
-		if token := ctx.Config().GetString(k, ""); token != "" {
-			return token, nil
-		}
+	token := getBotToken(ctx, acc)
+	if token == "" {
+		return acc, "", fmt.Errorf("missing discord bot token for account %q in vault or config", acc.AccountID)
 	}
-
-	return "", fmt.Errorf("missing discord bot token for account %q in vault or config", accountID)
+	return acc, token, nil
 }
 
 func (d *DiscordChannel) getOrCreateDMChannel(ctx sdk.Context, token string, recipientID string) (string, error) {

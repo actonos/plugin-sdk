@@ -6,14 +6,15 @@ Official **Zalo Bot Platform** (`bot.zapps.me` / `bot-api.zaloplatforms.com`) ch
 
 - 🤖 **Zalo Bot Platform API Integration**: Integrates directly with official Zalo Bot endpoints.
 - 📝 **Markdown Rich Text & Resilient Parsing**: Full Markdown support (`**bold**`, `*italic*`, `# Headings`, code blocks, lists) with automatic plain-text fallback if Markdown syntax fails.
-- ⚡ **Live Real-Time Typing Indicators (`typing`)**: Automatically displays *"đang nhập..."* typing indicator as soon as a user's message is received while the AI agent computes the answer.
-- 💬 **Auto Quote & Threaded Replies**: Outbound messages automatically attach `reply_to_message_id` to quote the user's prompt.
+- ⚡ **Live Real-Time Typing Indicators (`typing`)**: Canonical outbound `kind=typing` plus inbound ack while the agent computes the answer.
+- 😊 **Acknowledgement Reactions**: Canonical `kind=reaction` / inbound ack emoji (`setMessageReaction`).
+- 💬 **Auto Quote & Threaded Replies**: Outbound `reply_to_id` maps to `reply_to_message_id`.
 - 🖼️ **Multi-Media Message Support**:
   - **Photos / Images (`sendPhoto`)**: Sends image URLs with markdown captions and reply threading.
   - **Documents / Files (`sendDocument`)**: Sends PDF, CSV, TXT, DOCX files with file names and captions.
   - **Voice / Audio Notes (`sendVoice`)**: Sends voice/audio notes with captions.
 - 👥 **Group Chat & Direct Chat Routing**: Seamless handling for both `PRIVATE` and `GROUP` chat types with `@agent` mention extraction.
-- 🏢 **Multi-Bot Accounts Gateway**: Manage multiple Zalo bot accounts for department-based routing (e.g. `sales_bot`, `support_bot`).
+- 🏢 **Canonical `accounts[]` Gateway**: Same account schema as Discord/Telegram/Slack/WhatsApp (`account_id`, `bot_token`, `default_agent`, typing/reaction/quote flags).
 - 🛡️ **Hardware Vault Isolation**: Isolated secret storage for `zalo_bot_token` and `zalo_bot_tokens.<account_id>`.
 - 🔄 **Dual Receiving Modes**:
   - **Long-Polling Mode (`getUpdates`)**: High-performance local polling with configurable interval, auto conflict resolution, and automatic `deleteWebhook` recovery.
@@ -26,6 +27,7 @@ Official **Zalo Bot Platform** (`bot.zapps.me` / `bot-api.zaloplatforms.com`) ch
 | `https://bot-api.zaloplatforms.com/bot${TOKEN}/getMe` | `POST` | Validates bot token & returns bot name / ID |
 | `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendMessage` | `POST` | Transmits markdown text messages with chunking & quote replies |
 | `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendChatAction` | `POST` | Broadcasts real-time typing indicators |
+| `https://bot-api.zaloplatforms.com/bot${TOKEN}/setMessageReaction` | `POST` | Acknowledges inbound messages with an emoji reaction |
 | `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendPhoto` | `POST` | Sends images with markdown captions |
 | `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendDocument` | `POST` | Sends documents with custom file names & captions |
 | `https://bot-api.zaloplatforms.com/bot${TOKEN}/sendVoice` | `POST` | Sends voice/audio notes |

@@ -27,9 +27,9 @@ type BaseChannel struct {
 	PairingRequired    bool
 }
 
-func (b *BaseChannel) Name() string            { return b.ChannelName }
-func (b *BaseChannel) DisplayName() string     { return b.ChannelDisplayName }
-func (b *BaseChannel) RequiresPairing() bool   { return b.PairingRequired }
+func (b *BaseChannel) Name() string          { return b.ChannelName }
+func (b *BaseChannel) DisplayName() string   { return b.ChannelDisplayName }
+func (b *BaseChannel) RequiresPairing() bool { return b.PairingRequired }
 func (b *BaseChannel) PollMessages(ctx Context) ([]InboundMessage, error) {
 	return nil, nil
 }
@@ -45,6 +45,7 @@ func NewInboundMessage(channelID, accountID, senderID, senderName, content strin
 		TargetAgent: targetAgent,
 		MentionText: content,
 		Content:     cleanContent,
+		Kind:        MessageKindText,
 		Metadata:    make(map[string]string),
 	}
 }
@@ -55,6 +56,7 @@ func NewOutboundMessage(channelID, recipient, content string) OutboundMessage {
 		ChannelID: channelID,
 		Recipient: recipient,
 		Content:   content,
+		Kind:      MessageKindText,
 		Metadata:  make(map[string]string),
 	}
 }

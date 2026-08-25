@@ -105,7 +105,54 @@ func generateManifest(name, pType string) string {
       "display_name": "%s",
       "requires_pairing": true
     }
-  ]
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "poll_interval_seconds": {
+        "type": "integer",
+        "title": "Polling Interval (seconds)",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 60,
+        "x-ui-group": "General Settings"
+      },
+      "accounts": {
+        "type": "array",
+        "title": "Bot Accounts",
+        "minItems": 1,
+        "x-ui-group": "Bot Accounts",
+        "items": {
+          "type": "object",
+          "required": ["account_id", "bot_token", "default_agent"],
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "title": "Account ID",
+              "pattern": "^[a-z0-9_-]+$",
+              "x-ui-placeholder": "e.g. support_bot"
+            },
+            "display_name": { "type": "string", "title": "Display Name" },
+            "bot_token": {
+              "type": "string",
+              "title": "Bot Token",
+              "x-secret": true,
+              "x-ui-widget": "password"
+            },
+            "default_agent": {
+              "type": "string",
+              "title": "Default Target Agent",
+              "x-ui-widget": "agent-selector"
+            },
+            "enable_typing_indicator": { "type": "boolean", "title": "Live Typing Indicator", "default": true },
+            "enable_ack_reaction": { "type": "boolean", "title": "Acknowledge with Reaction", "default": true },
+            "enable_reply_quote": { "type": "boolean", "title": "Quote / Thread Reply", "default": true },
+            "ack_reaction_emoji": { "type": "string", "title": "Acknowledgement Emoji", "default": "👀" }
+          }
+        }
+      }
+    }
+  }
 }
 `, name, cleanName, cleanName, name, cleanName)
 

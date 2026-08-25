@@ -8,11 +8,11 @@ This document lists all official, ready-to-deploy built-in plugins provided in t
 
 | Plugin Name | ID | Capabilities | Required Vault Secrets | Egress Whitelist | Features |
 |:---|:---|:---|:---|:---|:---|
-| **Telegram** | `channel-telegram` | `channel` | `telegram_bot_token` | `api.telegram.org` | MarkdownV2, Reply-to-threading, inline buttons, `@agent` routing, 6-digit PIN pairing |
-| **Discord** | `channel-discord` | `channel` | `discord_bot_tokens.*` | `discord.com` | Multi-Bot accounts, channel messages, rich embeds, `<@!id>` mention stripping, dynamic multi-agent dispatch |
-| **WhatsApp** | `channel-whatsapp` | `channel` | `whatsapp_access_token`, `whatsapp_phone_number_id` | `graph.facebook.com` | WhatsApp Cloud API, individual text & template messaging, webhook buffering |
-| **Slack** | `channel-slack` | `channel` | `slack_bot_token` | `slack.com` | `chat.postMessage`, thread replies (`thread_ts`), conversation history polling |
-| **Zalo OA** | `channel-zalo` | `channel` | `zalo_oa_access_token` | `openapi.zalo.me` | Zalo OpenAPI v3.0, customer support messaging, Vietnamese `@agent` syntax support |
+| **Telegram** | `channel-telegram` | `channel` | `telegram_bot_token` | `api.telegram.org` | Canonical `accounts[]`, Markdown, quote replies, `sendChatAction` typing, `setMessageReaction` ack, `@agent` routing |
+| **Discord** | `channel-discord` | `channel` | `discord_bot_tokens.*` | `discord.com`, `gateway.discord.gg` | Canonical `accounts[]`, Gateway + REST, rich embeds, typing, reactions, `message_reference` quotes |
+| **WhatsApp** | `channel-whatsapp` | `channel` | `whatsapp_access_token`, `whatsapp_phone_number_id` | `graph.facebook.com` | Canonical `accounts[]`, Cloud API text, typing indicator, message reactions, quoted replies, webhook buffering |
+| **Slack** | `channel-slack` | `channel` | `slack_bot_token` | `slack.com` | Canonical `accounts[]`, `chat.postMessage`, thread replies (`thread_ts`), `reactions.add` ack |
+| **Zalo** | `channel-zalo` | `channel` | `zalo_bot_token` | `bot-api.zaloplatforms.com` | Canonical `accounts[]`, Markdown, `sendChatAction` typing, reactions, quote replies, media |
 
 ---
 

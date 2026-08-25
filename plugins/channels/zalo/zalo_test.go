@@ -188,6 +188,12 @@ func TestZaloBotPlatformPluginWasm(t *testing.T) {
 	if msgs[0].Metadata["chat_type"] != "GROUP" {
 		t.Errorf("msg 0: expected chat_type 'GROUP', got '%s'", msgs[0].Metadata["chat_type"])
 	}
+	if msgs[0].ChatID != "chat_group_123" {
+		t.Errorf("msg 0: expected ChatID 'chat_group_123', got '%s'", msgs[0].ChatID)
+	}
+	if msgs[0].MessageID != "webhook_msg_999" {
+		t.Errorf("msg 0: expected MessageID 'webhook_msg_999', got '%s'", msgs[0].MessageID)
+	}
 
 	// Check message 2 (from getUpdates polling)
 	if msgs[1].TargetAgent != "support" {

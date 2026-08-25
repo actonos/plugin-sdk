@@ -47,7 +47,43 @@ The SDK automatically reflects field types and tags (`jsonschema:"description=..
 
 ## 3. Developing Chat Channels (`sdk.ChannelAdapter`)
 
-Chat channels connect external messaging services (Telegram, Discord, Slack, WhatsApp, Webhooks) with ActonOS agents.
+Chat channels connect external messaging services (Telegram, Discord, Slack, WhatsApp, Zalo) with ActonOS agents.
+
+Every channel plugin **must** use the same account schema and the same inbound/outbound envelope so the host can drive typing, reactions, and quote-replies uniformly.
+
+### 3.1. Canonical account schema
+
+Root `config_schema` is `{ poll_interval_seconds, accounts[] }`. Each account item follows `spec/CHANNEL_ACCOUNT_SCHEMA.json`:
+
+| Field | Required | Notes |
+|:---|:---|:---|
+| `account_id` | yes | `^[a-z0-9_-]+$` |
+| `display_name` | | UI label |
+| *credential* | yes | Platform-specific (`bot_token`, or WhatsApp `access_token` + `phone_number_id`) |
+| `default_agent` | yes | `x-ui-widget: agent-selector` |
+| `listen_target` | | Optional conversation/channel filter (alias: `listen_channel_id`) |
+| `enable_typing_indicator` | | default `true` |
+| `enable_ack_reaction` | | default `true` |
+| `enable_reply_quote` | | default `true` |
+| `ack_reaction_emoji` | | default `👀` |
+
+Embed `sdk.ChannelAccount` in the plugin account struct. Legacy root-level tokens are still read as a synthesized `account_id=default` account.
+
+### 3.2. Canonical I/O envelope
+
+`acton_channel_send` / `acton_channel_poll` normalize aliases in both directions. Hosts should prefer typed fields; metadata aliases stay valid.
+
+**Inbound** (`sdk.InboundMessage`): `kind`, `message_id`, `chat_id`, `thread_id`, `timestamp`, `reaction`.
+
+**Outbound** (`sdk.OutboundMessage`): `kind` (`text` \| `typing` \| `reaction` \| `media`), `chat_id`, `reply_to_id`, `thread_id`, `reaction`, `action`, `typing`.
+
+| Host intent | How to send | Plugin mapping |
+|:---|:---|:---|
+| Typing | `kind=typing` or `typing=true` or empty content | Discord `POST /typing`, Telegram/Zalo `sendChatAction`, WhatsApp `typing_indicator`, Slack no-op |
+| Ack / react | `kind=reaction` + `reaction` + `reply_to_id` | Discord reactions, Telegram/Zalo `setMessageReaction`, Slack `reactions.add`, WhatsApp `type=reaction` |
+| Quote reply | `reply_to_id` with `enable_reply_quote` | Discord `message_reference`, Telegram/Zalo `reply_to_message_id`, Slack `thread_ts`, WhatsApp `context.message_id` |
+
+Use `sdk.ApplyInboundEnvelope(&msg, chatID, messageID, threadID, timestamp)` when emitting inbound events.
 
 ```go
 type MyChannel struct {
@@ -56,15 +92,18 @@ type MyChannel struct {
 
 func (c *MyChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
     token, _ := ctx.Vault().GetSecret("channel_token")
+    if msg.WantsTyping() {
+        // emit platform typing, return if msg.IsTypingOnly()
+    }
     return ctx.HTTP().PostJSONWithBearer("https://api.mychat.com/send", token, map[string]any{
-        "to": msg.Recipient,
+        "to":   sdk.FirstNonEmpty(msg.ChatID, msg.Recipient),
         "text": msg.Content,
     })
 }
 
 func (c *MyChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {
-    // Return received messages using sdk.NewInboundMessage (automatically parses @agent mentions)
     msg := sdk.NewInboundMessage("telegram", "bot_primary", "123456", "Alice", "@coder please fix this bug")
+    sdk.ApplyInboundEnvelope(&msg, "888", "42", "", "")
     return []sdk.InboundMessage{msg}, nil
 }
 ```
@@ -132,6 +171,7 @@ Plugins can declare a flexible, schema-driven settings configuration in their `m
             "account_id": {
               "type": "string",
               "title": "Account ID",
+              "pattern": "^[a-z0-9_-]+$",
               "x-ui-placeholder": "bot_support"
             },
             "bot_token": {
@@ -144,7 +184,11 @@ Plugins can declare a flexible, schema-driven settings configuration in their `m
               "type": "string",
               "title": "Default Agent",
               "x-ui-widget": "agent-selector"
-            }
+            },
+            "enable_typing_indicator": { "type": "boolean", "default": true },
+            "enable_ack_reaction": { "type": "boolean", "default": true },
+            "enable_reply_quote": { "type": "boolean", "default": true },
+            "ack_reaction_emoji": { "type": "string", "default": "👀" }
           }
         }
       }
@@ -162,8 +206,7 @@ type MyPluginConfig struct {
 }
 
 type AccountConfig struct {
-    AccountID    string `json:"account_id"`
-    DefaultAgent string `json:"default_agent"`
+    sdk.ChannelAccount
 }
 
 func (c *MyChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error) {

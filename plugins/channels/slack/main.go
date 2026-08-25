@@ -7,19 +7,13 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
-// SlackConfig defines the root configuration model for the Slack channel plugin.
 type SlackConfig struct {
 	PollIntervalSeconds int            `json:"poll_interval_seconds"`
 	Accounts            []SlackAccount `json:"accounts"`
 }
 
-// SlackAccount represents an individual configured Slack bot instance.
 type SlackAccount struct {
-	AccountID       string `json:"account_id"`
-	DisplayName     string `json:"display_name"`
-	BotToken        string `json:"bot_token,omitempty"`
-	DefaultAgent    string `json:"default_agent"`
-	ListenChannelID string `json:"listen_channel_id"`
+	sdk.ChannelAccount
 }
 
 type SlackChannel struct {
@@ -29,43 +23,46 @@ type SlackChannel struct {
 type SlackHistoryResponse struct {
 	OK       bool `json:"ok"`
 	Messages []struct {
-		Type    string `json:"type"`
-		User    string `json:"user"`
-		Text    string `json:"text"`
-		TS      string `json:"ts"`
-		BotID   string `json:"bot_id"`
-		Subtype string `json:"subtype"`
+		Type     string `json:"type"`
+		User     string `json:"user"`
+		Text     string `json:"text"`
+		TS       string `json:"ts"`
+		ThreadTS string `json:"thread_ts"`
+		BotID    string `json:"bot_id"`
+		Subtype  string `json:"subtype"`
 	} `json:"messages"`
 }
 
 func (s *SlackChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
-	accountID := msg.AccountID
-	if accountID == "" {
-		accountID = msg.Metadata["account_id"]
-	}
-	if accountID == "" {
-		accountID = "default"
-	}
-
-	token, err := getSlackBotToken(ctx, accountID)
+	acc, token, err := resolveSlackAccount(ctx, msg.AccountID)
 	if err != nil {
 		return err
 	}
 
-	// Prioritize channel_id from metadata, fallback to recipient
-	channelID := msg.Metadata["channel_id"]
-	if channelID == "" {
-		channelID = msg.Recipient
-	}
+	channelID := sdk.FirstNonEmpty(msg.ChatID, msg.Recipient)
 	if channelID == "" {
 		return fmt.Errorf("recipient or channel_id is required")
 	}
 
-	// Handle explicit reactions
-	if origTS, ok := msg.Metadata["reply_to_ts"]; ok && origTS != "" {
-		if reaction, ok := msg.Metadata["reaction"]; ok && reaction != "" {
-			addSlackReaction(ctx, token, channelID, origTS, reaction)
+	if msg.WantsTyping() {
+		if acc.TypingEnabled() {
+			sendSlackTyping(ctx, token, channelID)
 		}
+		if msg.IsTypingOnly() {
+			return nil
+		}
+	} else if msg.IsTypingOnly() {
+		return nil
+	}
+
+	if msg.Reaction != "" && acc.AckReactionEnabled() {
+		target := sdk.FirstNonEmpty(msg.ReplyToID, msg.ThreadID)
+		addSlackReaction(ctx, token, channelID, target, sdk.MapReactionForPlatform("slack", msg.Reaction))
+		if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+			return nil
+		}
+	} else if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+		return nil
 	}
 
 	chunks := sdk.SplitMessage(msg.Content, 3900)
@@ -77,10 +74,11 @@ func (s *SlackChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) err
 			"text":    chunk,
 		}
 
-		if threadTS, ok := msg.Metadata["thread_ts"]; ok && threadTS != "" {
-			payload["thread_ts"] = threadTS
-		} else if replyToTS, ok := msg.Metadata["reply_to_ts"]; ok && replyToTS != "" {
-			payload["thread_ts"] = replyToTS
+		if acc.ReplyQuoteEnabled() {
+			threadTS := sdk.FirstNonEmpty(msg.ThreadID, msg.ReplyToID)
+			if threadTS != "" {
+				payload["thread_ts"] = threadTS
+			}
 		}
 
 		resp, err := ctx.HTTP().PostJSONWithBearer("https://slack.com/api/chat.postMessage", token, payload)
@@ -103,8 +101,9 @@ func (s *SlackChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) err
 	}
 
 	_ = ctx.EventBus().Emit("channel.slack.sent", map[string]string{
-		"account_id": accountID,
+		"account_id": acc.AccountID,
 		"channel_id": channelID,
+		"chat_id":    channelID,
 		"ts":         lastTS,
 		"chunks":     strconv.Itoa(len(chunks)),
 	})
@@ -119,9 +118,10 @@ func (s *SlackChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, erro
 	if len(accounts) == 0 {
 		accounts = []SlackAccount{
 			{
-				AccountID:       "default",
-				DisplayName:     "Default Slack Bot",
-				ListenChannelID: "general",
+				ChannelAccount: sdk.ChannelAccount{
+					AccountID:   "default",
+					DisplayName: "Default Slack Bot",
+				},
 			},
 		}
 	}
@@ -129,12 +129,15 @@ func (s *SlackChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, erro
 	var allInbound []sdk.InboundMessage
 
 	for _, acc := range accounts {
-		token, err := getSlackBotToken(ctx, acc.AccountID)
-		if err != nil || token == "" {
+		if acc.AccountID == "" {
+			acc.AccountID = "default"
+		}
+		token := getSlackBotToken(ctx, acc)
+		if token == "" {
 			continue
 		}
 
-		channelID := acc.ListenChannelID
+		channelID := acc.ResolveListenTarget()
 		if channelID == "" {
 			if stored, ok, _ := ctx.Storage().Get("listen_channel_id"); ok && stored != "" {
 				channelID = stored
@@ -186,15 +189,18 @@ func (s *SlackChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, erro
 				cleanText,
 			)
 			inbound.TargetAgent = targetAgent
-			inbound.Metadata["channel_id"] = channelID
 			inbound.Metadata["ts"] = m.TS
-			inbound.Metadata["account_id"] = acc.AccountID
+			sdk.ApplyInboundEnvelope(&inbound, channelID, m.TS, m.ThreadTS, m.TS)
 
 			allInbound = append(allInbound, inbound)
 			_ = ctx.EventBus().Emit("channel.slack.received", inbound)
 
-			// Add 👀 emoji reaction to acknowledge prompt receipt
-			addSlackReaction(ctx, token, channelID, m.TS, "eyes")
+			if acc.TypingEnabled() {
+				sendSlackTyping(ctx, token, channelID)
+			}
+			if acc.AckReactionEnabled() {
+				addSlackReaction(ctx, token, channelID, m.TS, sdk.MapReactionForPlatform("slack", acc.ReactionEmoji()))
+			}
 		}
 
 		if newestTS != lastTS && newestTS != "" {
@@ -205,7 +211,14 @@ func (s *SlackChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, erro
 	return allInbound, nil
 }
 
-// addSlackReaction attaches an emoji reaction to a message timestamp.
+func sendSlackTyping(ctx sdk.Context, token, channelID string) {
+	// Slack Web API has no public typing indicator for classic bots. Accept the
+	// canonical typing event so the host contract stays uniform across channels.
+	_ = ctx
+	_ = token
+	_ = channelID
+}
+
 func addSlackReaction(ctx sdk.Context, token, channelID, timestamp, name string) {
 	if token == "" || channelID == "" || timestamp == "" || name == "" {
 		return
@@ -218,32 +231,29 @@ func addSlackReaction(ctx sdk.Context, token, channelID, timestamp, name string)
 	_, _ = ctx.HTTP().PostJSONWithBearer("https://slack.com/api/reactions.add", token, payload)
 }
 
-func getSlackBotToken(ctx sdk.Context, accountID string) (string, error) {
-	if accountID != "" && accountID != "default" {
-		if token, err := ctx.Vault().GetSecret("slack_bot_tokens." + accountID); err == nil && token != "" {
-			return token, nil
-		}
-		if token, err := ctx.Vault().GetSecret("slack_bot_token_" + accountID); err == nil && token != "" {
-			return token, nil
-		}
-		if token, err := ctx.Vault().GetSecret("accounts." + accountID + ".bot_token"); err == nil && token != "" {
-			return token, nil
+func getSlackBotToken(ctx sdk.Context, acc SlackAccount) string {
+	return sdk.ResolveSecret(ctx, acc.BotToken, sdk.AccountVaultKeys(acc.AccountID, "slack_bot_tokens", "slack_bot_token", "bot_token", "token")...)
+}
+
+func resolveSlackAccount(ctx sdk.Context, accountID string) (SlackAccount, string, error) {
+	var cfg SlackConfig
+	_ = ctx.Config().Bind(&cfg)
+
+	acc := SlackAccount{ChannelAccount: sdk.ChannelAccount{AccountID: accountID}}
+	for _, a := range cfg.Accounts {
+		if a.AccountID == accountID {
+			acc = a
+			break
 		}
 	}
-
-	for _, k := range []string{"slack_bot_token", "bot_token", "token"} {
-		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
-			return token, nil
-		}
+	if acc.AccountID == "" {
+		acc.AccountID = "default"
 	}
-
-	for _, k := range []string{"slack_bot_token", "bot_token", "token"} {
-		if token := ctx.Config().GetString(k, ""); token != "" {
-			return token, nil
-		}
+	token := getSlackBotToken(ctx, acc)
+	if token == "" {
+		return acc, "", fmt.Errorf("missing slack bot token for account %q in vault or config", acc.AccountID)
 	}
-
-	return "", fmt.Errorf("missing slack bot token for account %q in vault or config", accountID)
+	return acc, token, nil
 }
 
 func init() {

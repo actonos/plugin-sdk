@@ -72,6 +72,12 @@ func TestDiscordPluginWasm(t *testing.T) {
 	if msgs[0].Content != "deploy to production" {
 		t.Fatalf("expected cleaned content 'deploy to production', got '%s'", msgs[0].Content)
 	}
+	if msgs[0].ChatID != "default" {
+		t.Fatalf("expected ChatID 'default', got '%s'", msgs[0].ChatID)
+	}
+	if msgs[0].MessageID != "msg_999" {
+		t.Fatalf("expected MessageID 'msg_999', got '%s'", msgs[0].MessageID)
+	}
 
 	// 2. Send outbound message
 	outMsg := sdk.NewOutboundMessage("discord", "12345", "Deployment completed successfully!")

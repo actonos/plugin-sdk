@@ -74,6 +74,15 @@ func TestTelegramPluginWasm(t *testing.T) {
 	if msgs[0].Content != "review pull request" {
 		t.Fatalf("expected cleaned content 'review pull request', got '%s'", msgs[0].Content)
 	}
+	if msgs[0].ChatID != "888" {
+		t.Fatalf("expected ChatID '888', got '%s'", msgs[0].ChatID)
+	}
+	if msgs[0].MessageID != "42" {
+		t.Fatalf("expected MessageID '42', got '%s'", msgs[0].MessageID)
+	}
+	if msgs[0].Kind != sdk.MessageKindText {
+		t.Fatalf("expected kind text, got '%s'", msgs[0].Kind)
+	}
 
 	// 2. Send outbound message
 	outMsg := sdk.NewOutboundMessage("telegram", "888", "Hello Alice from ActonOS Agent!")

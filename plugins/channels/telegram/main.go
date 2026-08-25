@@ -8,23 +8,19 @@ import (
 	"github.com/actonos/plugin-sdk/sdk"
 )
 
-// TelegramConfig defines the root configuration model for the Telegram channel plugin.
 type TelegramConfig struct {
-	TelegramBotToken    string            `json:"telegram_bot_token"`
-	BotToken            string            `json:"bot_token"`
-	DefaultAgent        string            `json:"default_agent"`
 	PollIntervalSeconds int               `json:"poll_interval_seconds"`
-	EnableReactions     bool              `json:"enable_reactions"`
 	Accounts            []TelegramAccount `json:"accounts"`
+	// Legacy root-level fields kept for backward-compatible config binding.
+	TelegramBotToken string `json:"telegram_bot_token"`
+	BotToken         string `json:"bot_token"`
+	DefaultAgent     string `json:"default_agent"`
+	ParseMode        string `json:"parse_mode"`
 }
 
-// TelegramAccount represents an individual configured Telegram bot instance.
 type TelegramAccount struct {
-	AccountID       string `json:"account_id"`
-	DisplayName     string `json:"display_name"`
-	BotToken        string `json:"bot_token,omitempty"`
-	DefaultAgent    string `json:"default_agent"`
-	EnableReactions bool   `json:"enable_reactions"`
+	sdk.ChannelAccount
+	ParseMode string `json:"parse_mode,omitempty"`
 }
 
 type TelegramChannel struct {
@@ -44,6 +40,7 @@ type TelegramUpdate struct {
 			ID int64 `json:"id"`
 		} `json:"chat"`
 		Text string `json:"text"`
+		Date int64  `json:"date"`
 	} `json:"message"`
 }
 
@@ -55,68 +52,52 @@ type TelegramAPIResponse struct {
 }
 
 func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
-	accountID := msg.AccountID
-	if accountID == "" {
-		accountID = msg.Metadata["account_id"]
-	}
-	if accountID == "" {
-		accountID = "default"
-	}
-
-	token, err := getTelegramBotToken(ctx, TelegramAccount{AccountID: accountID})
+	acc, token, err := resolveTelegramAccount(ctx, msg.AccountID)
 	if err != nil {
-		ctx.Log().Error("Telegram SendMessage token error", "account_id", accountID, "err", err)
+		ctx.Log().Error("Telegram SendMessage token error", "account_id", msg.AccountID, "err", err)
 		return err
 	}
 
-	// Prioritize chat_id from metadata (group/channel chat), fallback to recipient
-	chatID := msg.Metadata["chat_id"]
-	if chatID == "" {
-		chatID = msg.Recipient
-	}
+	chatID := sdk.FirstNonEmpty(msg.ChatID, msg.Recipient)
 	if chatID == "" {
 		return fmt.Errorf("recipient or chat_id is required")
 	}
 
-	// 1. Handle explicit typing indicators or chat actions
-	if msg.Metadata["typing"] == "true" || msg.Metadata["action"] != "" || msg.Content == "" {
-		action := msg.Metadata["action"]
-		if action == "" {
-			action = "typing"
+	if msg.WantsTyping() && acc.TypingEnabled() {
+		sendTelegramChatAction(ctx, token, chatID, msg.ChatAction())
+		if msg.IsTypingOnly() {
+			return nil
 		}
-		sendTelegramChatAction(ctx, token, chatID, action)
+	} else if msg.IsTypingOnly() {
 		return nil
 	}
 
-	// 2. Handle reaction updates on the original message if specified
-	if replyTo, ok := msg.Metadata["reply_to_msg_id"]; ok && replyTo != "" {
-		if reaction, ok := msg.Metadata["reaction"]; ok && reaction != "" {
-			if msgID, err := strconv.Atoi(replyTo); err == nil {
-				setTelegramReaction(ctx, token, chatID, msgID, reaction)
-			}
+	if msg.Reaction != "" && acc.AckReactionEnabled() {
+		if msgID, convErr := strconv.Atoi(msg.ReplyToID); convErr == nil {
+			setTelegramReaction(ctx, token, chatID, msgID, sdk.MapReactionForPlatform("telegram", msg.Reaction))
 		}
+		if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+			return nil
+		}
+	} else if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+		return nil
 	}
 
 	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 	chunks := sdk.SplitMessage(msg.Content, 3900)
 
+	parseMode := sdk.FirstNonEmpty(msg.Metadata["parse_mode"], acc.ParseMode, "Markdown")
+
 	for i, chunk := range chunks {
 		payload := map[string]any{
-			"chat_id": chatID,
-			"text":    chunk,
+			"chat_id":    chatID,
+			"text":       chunk,
+			"parse_mode": parseMode,
 		}
 
-		if parseMode, ok := msg.Metadata["parse_mode"]; ok && parseMode != "" {
-			payload["parse_mode"] = parseMode
-		} else {
-			payload["parse_mode"] = "Markdown"
-		}
-
-		if i == 0 {
-			if replyTo, ok := msg.Metadata["reply_to_msg_id"]; ok && replyTo != "" {
-				if id, err := strconv.Atoi(replyTo); err == nil {
-					payload["reply_to_message_id"] = id
-				}
+		if acc.ReplyQuoteEnabled() && i == 0 && msg.ReplyToID != "" {
+			if id, convErr := strconv.Atoi(msg.ReplyToID); convErr == nil {
+				payload["reply_to_message_id"] = id
 			}
 		}
 
@@ -126,7 +107,6 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 			return fmt.Errorf("telegram sendMessage API failed: %w", err)
 		}
 
-		// If Markdown parse error (400 Bad Request), gracefully retry as plain text
 		if resp.Status == 400 && payload["parse_mode"] != nil {
 			ctx.Log().Warn("Telegram markdown parse failed, retrying plain text", "body", resp.Body)
 			delete(payload, "parse_mode")
@@ -143,7 +123,7 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 	}
 
 	_ = ctx.EventBus().Emit("channel.telegram.sent", map[string]string{
-		"account_id": accountID,
+		"account_id": acc.AccountID,
 		"chat_id":    chatID,
 		"status":     "sent",
 		"chunks":     strconv.Itoa(len(chunks)),
@@ -155,28 +135,12 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	var cfg TelegramConfig
 	_ = ctx.Config().Bind(&cfg)
 
-	accounts := cfg.Accounts
-	if len(accounts) == 0 {
-		defaultToken := cfg.TelegramBotToken
-		if defaultToken == "" {
-			defaultToken = cfg.BotToken
-		}
-		accounts = []TelegramAccount{
-			{
-				AccountID:       "default",
-				DisplayName:     "Default Telegram Bot",
-				BotToken:        defaultToken,
-				DefaultAgent:    cfg.DefaultAgent,
-				EnableReactions: cfg.EnableReactions,
-			},
-		}
-	}
-
+	accounts := activeTelegramAccounts(cfg)
 	var allInbound []sdk.InboundMessage
 
 	for _, acc := range accounts {
-		token, err := getTelegramBotToken(ctx, acc)
-		if err != nil || token == "" {
+		token := getTelegramBotToken(ctx, acc)
+		if token == "" {
 			continue
 		}
 
@@ -203,7 +167,6 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 			continue
 		}
 
-		// Auto-delete webhook if 409 Conflict occurs (reverts to long polling mode)
 		if resp.Status == 409 || strings.Contains(resp.Body, "webhook is active") {
 			ctx.Log().Info("Active webhook detected, deleting webhook to enable long-polling...", "account_id", acc.AccountID)
 			delURL := fmt.Sprintf("https://api.telegram.org/bot%s/deleteWebhook?drop_pending_updates=false", token)
@@ -227,44 +190,55 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 			continue
 		}
 
+		listenTarget := acc.ResolveListenTarget()
 		maxID := offset
 		for _, update := range apiResp.Result {
 			if update.UpdateID >= maxID {
 				maxID = update.UpdateID + 1
 			}
-			if update.Message != nil && update.Message.Text != "" {
-				senderID := strconv.FormatInt(update.Message.From.ID, 10)
-				senderName := update.Message.From.Username
-				if senderName == "" {
-					senderName = update.Message.From.FirstName
-				}
+			if update.Message == nil || update.Message.Text == "" {
+				continue
+			}
 
-				targetAgent, cleanContent := sdk.ExtractAgentMention(update.Message.Text)
-				if targetAgent == "" && acc.DefaultAgent != "" {
-					targetAgent = acc.DefaultAgent
-				}
+			chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
+			if listenTarget != "" && listenTarget != chatID {
+				continue
+			}
 
-				inbound := sdk.NewInboundMessage(
-					"telegram",
-					acc.AccountID,
-					senderID,
-					senderName,
-					cleanContent,
-				)
-				inbound.TargetAgent = targetAgent
-				inbound.Metadata["chat_id"] = strconv.FormatInt(update.Message.Chat.ID, 10)
-				inbound.Metadata["message_id"] = strconv.Itoa(update.Message.MessageID)
-				inbound.Metadata["account_id"] = acc.AccountID
+			senderID := strconv.FormatInt(update.Message.From.ID, 10)
+			senderName := update.Message.From.Username
+			if senderName == "" {
+				senderName = update.Message.From.FirstName
+			}
 
-				allInbound = append(allInbound, inbound)
-				_ = ctx.EventBus().Emit("channel.telegram.received", inbound)
-				ctx.Log().Info("Telegram message received", "from", senderName, "chat_id", inbound.Metadata["chat_id"], "target_agent", targetAgent)
+			targetAgent, cleanContent := sdk.ExtractAgentMention(update.Message.Text)
+			if targetAgent == "" && acc.DefaultAgent != "" {
+				targetAgent = acc.DefaultAgent
+			}
 
-				// 1. Trigger live typing indicator so the user immediately sees "... is typing"
-				sendTelegramChatAction(ctx, token, inbound.Metadata["chat_id"], "typing")
+			inbound := sdk.NewInboundMessage(
+				"telegram",
+				acc.AccountID,
+				senderID,
+				senderName,
+				cleanContent,
+			)
+			inbound.TargetAgent = targetAgent
+			ts := ""
+			if update.Message.Date > 0 {
+				ts = strconv.FormatInt(update.Message.Date, 10)
+			}
+			sdk.ApplyInboundEnvelope(&inbound, chatID, strconv.Itoa(update.Message.MessageID), "", ts)
 
-				// 2. React with 👀 emoji to acknowledge receipt of the prompt
-				setTelegramReaction(ctx, token, inbound.Metadata["chat_id"], update.Message.MessageID, "👀")
+			allInbound = append(allInbound, inbound)
+			_ = ctx.EventBus().Emit("channel.telegram.received", inbound)
+			ctx.Log().Info("Telegram message received", "from", senderName, "chat_id", chatID, "target_agent", targetAgent)
+
+			if acc.TypingEnabled() {
+				sendTelegramChatAction(ctx, token, chatID, "typing")
+			}
+			if acc.AckReactionEnabled() {
+				setTelegramReaction(ctx, token, chatID, update.Message.MessageID, sdk.MapReactionForPlatform("telegram", acc.ReactionEmoji()))
 			}
 		}
 
@@ -276,7 +250,6 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	return allInbound, nil
 }
 
-// sendTelegramChatAction triggers visual actions in Telegram (typing, upload_document, upload_photo).
 func sendTelegramChatAction(ctx sdk.Context, token, chatID, action string) {
 	if token == "" || chatID == "" {
 		return
@@ -291,7 +264,6 @@ func sendTelegramChatAction(ctx sdk.Context, token, chatID, action string) {
 	})
 }
 
-// setTelegramReaction sets an emoji reaction on a message (e.g. 👀, 👍, ⚡, ✅).
 func setTelegramReaction(ctx sdk.Context, token, chatID string, messageID int, emoji string) {
 	if token == "" || chatID == "" || messageID == 0 || emoji == "" {
 		return
@@ -310,46 +282,47 @@ func setTelegramReaction(ctx sdk.Context, token, chatID string, messageID int, e
 	_, _ = ctx.HTTP().PostJSON(reqURL, payload)
 }
 
-func getTelegramBotToken(ctx sdk.Context, acc TelegramAccount) (string, error) {
-	if acc.BotToken != "" {
-		return acc.BotToken, nil
+func activeTelegramAccounts(cfg TelegramConfig) []TelegramAccount {
+	if len(cfg.Accounts) > 0 {
+		return cfg.Accounts
 	}
-
-	accountID := acc.AccountID
-	if accountID != "" && accountID != "default" {
-		if token, err := ctx.Vault().GetSecret("telegram_bot_tokens." + accountID); err == nil && token != "" {
-			return token, nil
-		}
-		if token, err := ctx.Vault().GetSecret("telegram_bot_token_" + accountID); err == nil && token != "" {
-			return token, nil
-		}
-		if token, err := ctx.Vault().GetSecret("accounts." + accountID + ".bot_token"); err == nil && token != "" {
-			return token, nil
-		}
+	return []TelegramAccount{
+		{
+			ChannelAccount: sdk.ChannelAccount{
+				AccountID:    "default",
+				DisplayName:  "Default Telegram Bot",
+				BotToken:     sdk.FirstNonEmpty(cfg.TelegramBotToken, cfg.BotToken),
+				DefaultAgent: cfg.DefaultAgent,
+			},
+			ParseMode: cfg.ParseMode,
+		},
 	}
+}
 
-	// Direct vault lookup
-	for _, k := range []string{"telegram_bot_token", "bot_token", "token"} {
-		if token, err := ctx.Vault().GetSecret(k); err == nil && token != "" {
-			return token, nil
-		}
-	}
+func getTelegramBotToken(ctx sdk.Context, acc TelegramAccount) string {
+	return sdk.ResolveSecret(ctx, acc.BotToken, sdk.AccountVaultKeys(acc.AccountID, "telegram_bot_tokens", "telegram_bot_token", "bot_token", "token")...)
+}
 
-	// Direct config store lookup
-	for _, k := range []string{"telegram_bot_token", "bot_token", "token"} {
-		if token := ctx.Config().GetString(k, ""); token != "" {
-			return token, nil
-		}
-	}
+func resolveTelegramAccount(ctx sdk.Context, accountID string) (TelegramAccount, string, error) {
+	var cfg TelegramConfig
+	_ = ctx.Config().Bind(&cfg)
+	accounts := activeTelegramAccounts(cfg)
 
-	// KV storage lookup
-	for _, k := range []string{"telegram_bot_token", "bot_token", "token"} {
-		if token, ok, _ := ctx.Storage().Get(k); ok && token != "" {
-			return token, nil
+	acc := TelegramAccount{ChannelAccount: sdk.ChannelAccount{AccountID: accountID}}
+	for _, a := range accounts {
+		if a.AccountID == accountID || (accountID == "default" && (a.AccountID == "" || a.AccountID == "default")) {
+			acc = a
+			break
 		}
 	}
-
-	return "", fmt.Errorf("missing telegram bot token for account %q in vault or config", accountID)
+	if acc.AccountID == "" {
+		acc.AccountID = "default"
+	}
+	token := getTelegramBotToken(ctx, acc)
+	if token == "" {
+		return acc, "", fmt.Errorf("missing telegram bot token for account %q in vault or config", acc.AccountID)
+	}
+	return acc, token, nil
 }
 
 func init() {

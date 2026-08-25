@@ -16,24 +16,22 @@ const (
 
 // ZaloConfig defines the root configuration model for the Zalo Bot Platform channel plugin.
 type ZaloConfig struct {
-	ZaloBotToken          string        `json:"zalo_bot_token"`
-	ParseMode             string        `json:"parse_mode"` // "markdown" or "html"
-	DefaultAgent          string        `json:"default_agent"`
-	PollIntervalSeconds   int           `json:"poll_interval_seconds"`
-	EnableTypingIndicator bool          `json:"enable_typing_indicator"`
-	EnableReplyQuote      bool          `json:"enable_reply_quote"`
-	Accounts              []ZaloAccount `json:"accounts"`
+	PollIntervalSeconds int           `json:"poll_interval_seconds"`
+	Accounts            []ZaloAccount `json:"accounts"`
+	// Legacy root-level fields kept for backward-compatible config binding.
+	ZaloBotToken          string `json:"zalo_bot_token"`
+	ParseMode             string `json:"parse_mode"`
+	DefaultAgent          string `json:"default_agent"`
+	EnableTypingIndicator *bool  `json:"enable_typing_indicator"`
+	EnableAckReaction     *bool  `json:"enable_ack_reaction"`
+	EnableReplyQuote      *bool  `json:"enable_reply_quote"`
 }
 
 // ZaloAccount represents an individual configured Zalo Bot account instance.
 type ZaloAccount struct {
-	AccountID             string `json:"account_id"`
-	DisplayName           string `json:"display_name"`
-	ZaloBotToken          string `json:"zalo_bot_token,omitempty"`
-	DefaultAgent          string `json:"default_agent"`
-	ParseMode             string `json:"parse_mode"`
-	EnableTypingIndicator bool   `json:"enable_typing_indicator"`
-	EnableReplyQuote      bool   `json:"enable_reply_quote"`
+	sdk.ChannelAccount
+	ZaloBotToken string `json:"zalo_bot_token,omitempty"`
+	ParseMode    string `json:"parse_mode,omitempty"`
 }
 
 type ZaloChannel struct {
@@ -152,44 +150,39 @@ type ZaloSendChatActionPayload struct {
 // --- Channel Implementation ---
 
 func (z *ZaloChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
-	accountID := msg.AccountID
-	if accountID == "" {
-		accountID = msg.Metadata["account_id"]
-	}
-	if accountID == "" {
-		accountID = "default"
-	}
-
-	token, parseMode, err := getZaloBotToken(ctx, accountID)
+	acc, token, parseMode, err := resolveZaloAccount(ctx, msg.AccountID)
 	if err != nil {
-		ctx.Log().Error("Zalo SendMessage token error", "account_id", accountID, "err", err)
+		ctx.Log().Error("Zalo SendMessage token error", "account_id", msg.AccountID, "err", err)
 		return err
 	}
+	accountID := acc.AccountID
 
-	chatID := msg.Metadata["chat_id"]
-	if chatID == "" {
-		chatID = msg.Recipient
-	}
+	chatID := sdk.FirstNonEmpty(msg.ChatID, msg.Recipient)
 	if chatID == "" {
 		return fmt.Errorf("recipient or chat_id is required")
 	}
 
-	// 1. Handle typing indicator or chat actions
-	if msg.Metadata["typing"] == "true" || msg.Metadata["action"] != "" || (msg.Content == "" && msg.Metadata["photo"] == "" && msg.Metadata["image_url"] == "" && msg.Metadata["document"] == "" && msg.Metadata["file_url"] == "" && msg.Metadata["voice"] == "" && msg.Metadata["audio_url"] == "") {
-		action := msg.Metadata["action"]
-		if action == "" {
-			action = "typing"
+	if msg.WantsTyping() && acc.TypingEnabled() {
+		_ = sendZaloChatAction(ctx, token, chatID, msg.ChatAction())
+		if msg.IsTypingOnly() {
+			return nil
 		}
-		return sendZaloChatAction(ctx, token, chatID, action)
+	} else if msg.IsTypingOnly() {
+		return nil
 	}
 
-	// Extract reply_to_message_id if present
-	replyToID := msg.Metadata["reply_to_message_id"]
-	if replyToID == "" {
-		replyToID = msg.Metadata["reply_to_msg_id"]
+	if msg.Reaction != "" && acc.AckReactionEnabled() {
+		setZaloReaction(ctx, token, chatID, msg.ReplyToID, sdk.MapReactionForPlatform("zalo", msg.Reaction))
+		if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+			return nil
+		}
+	} else if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
+		return nil
 	}
-	if replyToID == "" {
-		replyToID = msg.Metadata["message_id"]
+
+	replyToID := ""
+	if acc.ReplyQuoteEnabled() {
+		replyToID = msg.ReplyToID
 	}
 
 	// 2. Handle image/photo attachments
@@ -309,8 +302,9 @@ func (z *ZaloChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error
 			}
 		}
 
+		webhookAcc := getActiveZaloAccounts(cfg)[0]
 		for _, ev := range events {
-			msg, ok := parseZaloEventToInbound(ev, cfg, "default")
+			msg, ok := parseZaloEventToInbound(ev, webhookAcc)
 			if ok {
 				inboundMsgs = append(inboundMsgs, msg)
 				ctx.Log().Info("Received Zalo message from Webhook queue", "sender_id", msg.SenderID, "sender_name", msg.SenderName, "agent", msg.TargetAgent)
@@ -322,7 +316,7 @@ func (z *ZaloChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error
 	// 2. Poll via getUpdates API for all active bot accounts
 	accounts := getActiveZaloAccounts(cfg)
 	for _, acc := range accounts {
-		token, _, err := getZaloBotToken(ctx, acc.AccountID)
+		token, _, err := getZaloBotToken(ctx, acc)
 		if err != nil || token == "" {
 			ctx.Log().Warn("Zalo polling skipped: bot token missing", "account_id", acc.AccountID, "err", err)
 			continue
@@ -440,23 +434,18 @@ func (z *ZaloChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, error
 				OK:     true,
 				Result: &res,
 			}
-			msg, ok := parseZaloEventToInbound(ev, cfg, acc.AccountID)
+			msg, ok := parseZaloEventToInbound(ev, acc)
 			if ok {
 				inboundMsgs = append(inboundMsgs, msg)
 				ctx.Log().Info("Received Zalo message via getUpdates", "sender_id", msg.SenderID, "sender_name", msg.SenderName, "agent", msg.TargetAgent, "text", msg.Content)
 				_ = ctx.EventBus().Emit("channel.zalo.received", msg)
 
-				// 1. Trigger live typing indicator so user sees immediate feedback on Zalo
-				typingEnabled := cfg.EnableTypingIndicator
-				if acc.EnableTypingIndicator {
-					typingEnabled = true
-				}
-				if typingEnabled {
-					chatID := msg.Metadata["chat_id"]
-					if chatID == "" {
-						chatID = msg.SenderID
-					}
+				chatID := sdk.FirstNonEmpty(msg.ChatID, msg.SenderID)
+				if acc.TypingEnabled() {
 					_ = sendZaloChatAction(ctx, token, chatID, "typing")
+				}
+				if acc.AckReactionEnabled() {
+					setZaloReaction(ctx, token, chatID, msg.MessageID, sdk.MapReactionForPlatform("zalo", acc.ReactionEmoji()))
 				}
 			}
 		}
@@ -486,66 +475,56 @@ func verifyZaloBotAccount(ctx sdk.Context, token, accountID, botInfoKey string) 
 	}
 }
 
-func getZaloBotToken(ctx sdk.Context, accountID string) (token string, parseMode string, err error) {
+func getZaloBotToken(ctx sdk.Context, acc ZaloAccount) (token string, parseMode string, err error) {
 	var cfg ZaloConfig
 	_ = ctx.Config().Bind(&cfg)
 
-	parseMode = cfg.ParseMode
-	if parseMode == "" {
-		parseMode = "markdown"
+	parseMode = sdk.FirstNonEmpty(acc.ParseMode, cfg.ParseMode, "markdown")
+	accountID := acc.AccountID
+	inline := sdk.FirstNonEmpty(acc.BotToken, acc.ZaloBotToken)
+
+	if inline != "" {
+		return inline, parseMode, nil
 	}
 
-	// 1. Account-specific Vault secrets (multi-account scenarios)
+	// Account-specific Vault secrets — ONLY Zalo-specific keys (never generic "bot_token")
+	keys := []string{}
 	if accountID != "" && accountID != "default" {
-		for _, key := range []string{
-			"zalo_bot_tokens." + accountID,
-			"zalo_tokens." + accountID,
-		} {
-			if secret, err := ctx.Vault().GetSecret(key); err == nil && secret != "" {
-				ctx.Log().Debug("Resolved Zalo token from vault", "key", key, "account_id", accountID)
-				return secret, parseMode, nil
-			}
-		}
+		keys = append(keys, "zalo_bot_tokens."+accountID, "zalo_tokens."+accountID)
 	}
-
-	// 2. Account-specific token from config accounts list
-	for _, acc := range cfg.Accounts {
-		if acc.AccountID == accountID {
-			if acc.ZaloBotToken != "" {
-				if acc.ParseMode != "" {
-					parseMode = acc.ParseMode
-				}
-				ctx.Log().Debug("Resolved Zalo token from config accounts list", "account_id", accountID)
-				return acc.ZaloBotToken, parseMode, nil
-			}
-		}
-	}
-
-	// 3. Default Vault secret — ONLY Zalo-specific keys (never use generic "bot_token")
-	if secret, vErr := ctx.Vault().GetSecret("zalo_bot_token"); vErr == nil && secret != "" {
-		ctx.Log().Debug("Resolved Zalo token from vault", "key", "zalo_bot_token", "account_id", accountID)
+	keys = append(keys, "zalo_bot_token")
+	if secret := sdk.ResolveSecret(ctx, "", keys...); secret != "" {
 		return secret, parseMode, nil
 	}
 
-	// 4. Root config zalo_bot_token field
 	if cfg.ZaloBotToken != "" {
-		ctx.Log().Debug("Resolved Zalo token from root config", "account_id", accountID)
 		return cfg.ZaloBotToken, parseMode, nil
 	}
 
-	// 5. Direct config store lookup — ONLY Zalo-specific keys
-	if val := ctx.Config().GetString("zalo_bot_token", ""); val != "" {
-		ctx.Log().Debug("Resolved Zalo token from config store", "key", "zalo_bot_token", "account_id", accountID)
-		return val, parseMode, nil
-	}
-
-	// 6. KV storage lookup — ONLY Zalo-specific keys
 	if val, ok, _ := ctx.Storage().Get("zalo_bot_token"); ok && val != "" {
-		ctx.Log().Debug("Resolved Zalo token from KV storage", "key", "zalo_bot_token", "account_id", accountID)
 		return val, parseMode, nil
 	}
 
-	return "", "", fmt.Errorf("no Zalo Bot Token found for account '%s': please set 'zalo_bot_token' in plugin config or vault (checked vault key 'zalo_bot_token', config field 'zalo_bot_token', and KV storage)", accountID)
+	return "", "", fmt.Errorf("no Zalo Bot Token found for account '%s': please set 'bot_token' / 'zalo_bot_token' in plugin config or vault", accountID)
+}
+
+func resolveZaloAccount(ctx sdk.Context, accountID string) (ZaloAccount, string, string, error) {
+	var cfg ZaloConfig
+	_ = ctx.Config().Bind(&cfg)
+	accounts := getActiveZaloAccounts(cfg)
+
+	acc := ZaloAccount{ChannelAccount: sdk.ChannelAccount{AccountID: accountID}}
+	for _, a := range accounts {
+		if a.AccountID == accountID || (accountID == "default" && (a.AccountID == "" || a.AccountID == "default")) {
+			acc = a
+			break
+		}
+	}
+	if acc.AccountID == "" {
+		acc.AccountID = "default"
+	}
+	token, parseMode, err := getZaloBotToken(ctx, acc)
+	return acc, token, parseMode, err
 }
 
 func getActiveZaloAccounts(cfg ZaloConfig) []ZaloAccount {
@@ -554,18 +533,29 @@ func getActiveZaloAccounts(cfg ZaloConfig) []ZaloAccount {
 	}
 	return []ZaloAccount{
 		{
-			AccountID:             "default",
-			DisplayName:           "Default Zalo Bot",
-			ZaloBotToken:          cfg.ZaloBotToken,
-			DefaultAgent:          cfg.DefaultAgent,
-			ParseMode:             cfg.ParseMode,
-			EnableTypingIndicator: cfg.EnableTypingIndicator,
-			EnableReplyQuote:      cfg.EnableReplyQuote,
+			ChannelAccount: sdk.ChannelAccount{
+				AccountID:    "default",
+				DisplayName:  "Default Zalo Bot",
+				BotToken:     cfg.ZaloBotToken,
+				DefaultAgent: cfg.DefaultAgent,
+				ChannelAccountFeatures: sdk.ChannelAccountFeatures{
+					EnableTypingIndicator: cfg.EnableTypingIndicator,
+					EnableAckReaction:     cfg.EnableAckReaction,
+					EnableReplyQuote:      cfg.EnableReplyQuote,
+				},
+			},
+			ZaloBotToken: cfg.ZaloBotToken,
+			ParseMode:    cfg.ParseMode,
 		},
 	}
 }
 
-func parseZaloEventToInbound(ev ZaloWebhookEvent, cfg ZaloConfig, accountID string) (sdk.InboundMessage, bool) {
+func parseZaloEventToInbound(ev ZaloWebhookEvent, acc ZaloAccount) (sdk.InboundMessage, bool) {
+	accountID := acc.AccountID
+	if accountID == "" {
+		accountID = "default"
+	}
+
 	// A. Handle new Zalo Bot Platform event format
 	if ev.Result != nil && ev.Result.Message != nil {
 		m := ev.Result.Message
@@ -587,8 +577,8 @@ func parseZaloEventToInbound(ev ZaloWebhookEvent, cfg ZaloConfig, accountID stri
 		}
 
 		targetAgent, cleanText := sdk.ExtractAgentMention(rawText)
-		if targetAgent == "" && cfg.DefaultAgent != "" {
-			targetAgent = cfg.DefaultAgent
+		if targetAgent == "" && acc.DefaultAgent != "" {
+			targetAgent = acc.DefaultAgent
 		}
 
 		inbound := sdk.NewInboundMessage(
@@ -599,12 +589,13 @@ func parseZaloEventToInbound(ev ZaloWebhookEvent, cfg ZaloConfig, accountID stri
 			cleanText,
 		)
 		inbound.TargetAgent = targetAgent
-		inbound.Metadata["msg_id"] = m.MessageID
-		inbound.Metadata["message_id"] = m.MessageID
 		inbound.Metadata["reply_to_msg_id"] = m.MessageID
-		inbound.Metadata["event_name"] = ev.Result.EventName
+		if ev.Result.EventName != "" {
+			inbound.Metadata["event_name"] = ev.Result.EventName
+		}
+		chatID := senderID
 		if m.Chat != nil {
-			inbound.Metadata["chat_id"] = m.Chat.ID
+			chatID = m.Chat.ID
 			inbound.Metadata["chat_type"] = m.Chat.ChatType
 		}
 		if m.Photo != "" {
@@ -616,18 +607,20 @@ func parseZaloEventToInbound(ev ZaloWebhookEvent, cfg ZaloConfig, accountID stri
 		if m.VoiceURL != "" {
 			inbound.Metadata["voice_url"] = m.VoiceURL
 		}
+		ts := ""
 		if m.Date > 0 {
-			inbound.Metadata["date"] = fmt.Sprintf("%d", m.Date)
+			ts = fmt.Sprintf("%d", m.Date)
+			inbound.Metadata["date"] = ts
 		}
-
+		sdk.ApplyInboundEnvelope(&inbound, chatID, m.MessageID, "", ts)
 		return inbound, true
 	}
 
 	// B. Handle legacy Zalo OA OpenAPI webhook event format
 	if ev.EventName == "user_send_text" && ev.LegacyMessage.Text != "" {
 		targetAgent, cleanText := sdk.ExtractAgentMention(ev.LegacyMessage.Text)
-		if targetAgent == "" && cfg.DefaultAgent != "" {
-			targetAgent = cfg.DefaultAgent
+		if targetAgent == "" && acc.DefaultAgent != "" {
+			targetAgent = acc.DefaultAgent
 		}
 
 		inbound := sdk.NewInboundMessage(
@@ -638,15 +631,27 @@ func parseZaloEventToInbound(ev ZaloWebhookEvent, cfg ZaloConfig, accountID stri
 			cleanText,
 		)
 		inbound.TargetAgent = targetAgent
-		inbound.Metadata["msg_id"] = ev.LegacyMessage.MsgID
-		inbound.Metadata["message_id"] = ev.LegacyMessage.MsgID
-		inbound.Metadata["reply_to_msg_id"] = ev.LegacyMessage.MsgID
 		inbound.Metadata["oa_id"] = ev.Recipient.ID
-
+		sdk.ApplyInboundEnvelope(&inbound, ev.Sender.ID, ev.LegacyMessage.MsgID, "", "")
 		return inbound, true
 	}
 
 	return sdk.InboundMessage{}, false
+}
+
+func setZaloReaction(ctx sdk.Context, token, chatID, messageID, emoji string) {
+	if token == "" || chatID == "" || messageID == "" || emoji == "" {
+		return
+	}
+	reqURL := fmt.Sprintf("%s/bot%s/setMessageReaction", defaultZaloBotAPIBase, token)
+	payload := map[string]any{
+		"chat_id":    chatID,
+		"message_id": messageID,
+		"reaction": []map[string]string{
+			{"type": "emoji", "emoji": emoji},
+		},
+	}
+	_, _ = ctx.HTTP().DoWithAuth("POST", reqURL, "", map[string]string{"Content-Type": "application/json"}, payload)
 }
 
 func sendZaloChatAction(ctx sdk.Context, token, chatID, action string) error {

@@ -1,8 +1,10 @@
 # Telegram Bot Channel Plugin
 
 ActonOS Chat Channel integration for Telegram with support for:
-- MarkdownV2 / HTML formatting
-- Reply-to-message threading
+- Canonical `accounts[]` schema (typing, ack reaction, quote reply)
+- Markdown / HTML formatting
+- Reply-to-message threading (`reply_to_id`)
+- Live typing (`sendChatAction`) and inbound acknowledgement reactions
 - Device Pairing (6-digit PIN)
 - Multi-Agent routing via `@agent` mentions (e.g. `@coder review this`)
 

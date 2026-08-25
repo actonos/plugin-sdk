@@ -1,9 +1,9 @@
 {
   "id": "channel-slack",
-  "name": "Slack Bot Channel",
-  "version": "1.0.0",
+  "name": "Slack",
+  "version": "1.1.0",
   "description": "Slack integration for ActonOS AI agents with Block Kit formatting, multi-account routing, and thread replies",
-  "author": "ActonOS Core Team",
+  "author": "ActonOS",
   "license": "MIT",
   "capabilities": [
     "channel"
@@ -43,10 +43,10 @@
       },
       "accounts": {
         "type": "array",
-        "title": "Slack Workspace Accounts",
+        "title": "Bot Accounts",
         "description": "Configure one or multiple Slack Bot integrations",
         "minItems": 1,
-        "x-ui-group": "Slack Accounts",
+        "x-ui-group": "Bot Accounts",
         "items": {
           "type": "object",
           "required": [
@@ -58,15 +58,17 @@
             "account_id": {
               "type": "string",
               "title": "Account ID",
-              "description": "Unique identifier for this Slack bot instance",
+              "description": "Unique identifier for this bot instance used for routing and session isolation",
               "pattern": "^[a-z0-9_-]+$",
-              "x-ui-placeholder": "e.g. dev_slack or support_slack"
+              "x-ui-placeholder": "e.g. support_bot",
+              "x-order": 1
             },
             "display_name": {
               "type": "string",
               "title": "Display Name",
               "description": "Friendly label for this Slack account",
-              "x-ui-placeholder": "Core Team Slack"
+              "x-ui-placeholder": "Core Team Slack",
+              "x-order": 2
             },
             "bot_token": {
               "type": "string",
@@ -74,20 +76,51 @@
               "description": "Bot token starting with xoxb- from Slack App Dashboard",
               "x-secret": true,
               "x-ui-widget": "password",
-              "x-ui-placeholder": "xoxb-1234567890-..."
+              "x-ui-placeholder": "xoxb-1234567890-...",
+              "x-order": 3
             },
             "default_agent": {
               "type": "string",
               "title": "Default Target Agent",
-              "description": "Default ActonOS agent to route incoming messages when no @mention is present",
+              "description": "Default ActonOS agent to dispatch incoming messages when no explicit @mention is present",
               "x-ui-widget": "agent-selector",
-              "x-ui-placeholder": "agent-dev"
+              "x-ui-placeholder": "agent-dev",
+              "x-order": 4
             },
-            "listen_channel_id": {
+            "listen_target": {
               "type": "string",
               "title": "Listen Channel ID",
-              "description": "Channel ID to monitor (e.g. C0123456789)",
-              "x-ui-placeholder": "C0123456789"
+              "description": "Slack channel ID to poll (e.g. C0123456789)",
+              "x-ui-placeholder": "C0123456789",
+              "x-order": 5
+            },
+            "enable_typing_indicator": {
+              "type": "boolean",
+              "title": "Live Typing Indicator",
+              "description": "Slack Web API has no public typing endpoint; outbound typing events are accepted as no-ops so the host contract stays uniform",
+              "default": true,
+              "x-order": 6
+            },
+            "enable_ack_reaction": {
+              "type": "boolean",
+              "title": "Acknowledge with Reaction",
+              "description": "React to the user's message via reactions.add to acknowledge receipt",
+              "default": true,
+              "x-order": 7
+            },
+            "enable_reply_quote": {
+              "type": "boolean",
+              "title": "Quote / Thread Reply",
+              "description": "Attach outbound replies as a Slack thread (thread_ts)",
+              "default": true,
+              "x-order": 8
+            },
+            "ack_reaction_emoji": {
+              "type": "string",
+              "title": "Acknowledgement Emoji",
+              "description": "Unicode emoji or Slack short name (👀 / eyes)",
+              "default": "👀",
+              "x-order": 9
             }
           }
         }

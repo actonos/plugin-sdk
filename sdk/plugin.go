@@ -252,7 +252,8 @@ func acton_channel_send(ptr uint32, length uint32) (ret int32) {
 		return -2
 	}
 
-	defaultCtx.Log().Info("Channel SendMessage dispatching", "channel", ch.Name(), "recipient", msg.Recipient, "account_id", msg.AccountID)
+	msg.Normalize()
+	defaultCtx.Log().Info("Channel SendMessage dispatching", "channel", ch.Name(), "recipient", msg.Recipient, "account_id", msg.AccountID, "kind", msg.Kind)
 	if err := ch.SendMessage(defaultCtx, msg); err != nil {
 		defaultCtx.Log().Error("channel SendMessage error", "channel", ch.Name(), "recipient", msg.Recipient, "err", err)
 		return -3
@@ -291,6 +292,10 @@ func acton_channel_poll() (ret uint64) {
 	if err != nil {
 		defaultCtx.Log().Error("channel PollMessages error", "channel", ch.Name(), "err", err)
 		return 0
+	}
+
+	for i := range msgs {
+		msgs[i].Normalize()
 	}
 
 	if len(msgs) > 0 {

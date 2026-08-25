@@ -133,8 +133,7 @@ type MyConfig struct {
 }
 
 type MyAccount struct {
-    AccountID    string `json:"account_id"`
-    DefaultAgent string `json:"default_agent"`
+    sdk.ChannelAccount
 }
 
 type MyChannel struct {
@@ -221,6 +220,7 @@ Plugin manifests MUST adhere to `spec/MANIFEST_SCHEMA.json` (JSON Schema Draft-0
             "account_id": {
               "type": "string",
               "title": "Account ID",
+              "pattern": "^[a-z0-9_-]+$",
               "x-ui-placeholder": "bot_support"
             },
             "bot_token": {
@@ -233,7 +233,11 @@ Plugin manifests MUST adhere to `spec/MANIFEST_SCHEMA.json` (JSON Schema Draft-0
               "type": "string",
               "title": "Default Agent",
               "x-ui-widget": "agent-selector"
-            }
+            },
+            "enable_typing_indicator": { "type": "boolean", "default": true },
+            "enable_ack_reaction": { "type": "boolean", "default": true },
+            "enable_reply_quote": { "type": "boolean", "default": true },
+            "ack_reaction_emoji": { "type": "string", "default": "👀" }
           }
         }
       }
