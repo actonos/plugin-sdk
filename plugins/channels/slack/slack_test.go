@@ -50,6 +50,10 @@ func TestSlackPluginWasm(t *testing.T) {
 		Status: 200,
 		Body:   `{"ok": true, "ts": "1710000000.000200", "channel": "C0123"}`,
 	})
+	mockHost.MockHTTPRoute("https://slack.com/api/files.upload", host.HTTPMockResponse{
+		Status: 200,
+		Body:   `{"ok": true, "file": {"id": "F123"}}`,
+	})
 
 	runner, err := mockHost.LoadPluginFromFile(ctx, wasmPath)
 	if err != nil {
@@ -79,5 +83,10 @@ func TestSlackPluginWasm(t *testing.T) {
 	outMsg := sdk.NewOutboundMessage("slack", "C0123", "All cluster nodes are healthy.")
 	if err := runner.SendChannelMessage(outMsg); err != nil {
 		t.Fatalf("send message failed: %v", err)
+	}
+
+	fileMsg := sdk.NewOutboundFile("slack", "C0123", "report", "status.pdf", "application/pdf", []byte("%PDF"))
+	if err := runner.SendChannelMessage(fileMsg); err != nil {
+		t.Fatalf("send file failed: %v", err)
 	}
 }

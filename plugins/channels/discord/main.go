@@ -92,6 +92,10 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 		return nil
 	}
 
+	if name, _, data, ok := msg.AttachedFile(); ok {
+		return sendDiscordFile(ctx, token, channelID, msg, acc, name, data)
+	}
+
 	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", channelID)
 	chunks := sdk.SplitMessage(msg.Content, 1900)
 
@@ -169,6 +173,42 @@ func (d *DiscordChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) e
 		"chat_id":    channelID,
 		"status":     "sent",
 		"chunks":     strconv.Itoa(len(chunks)),
+	})
+	return nil
+}
+
+func sendDiscordFile(ctx sdk.Context, token, channelID string, msg sdk.OutboundMessage, acc DiscordAccount, name string, data []byte) error {
+	payload := map[string]any{}
+	if strings.TrimSpace(msg.Content) != "" {
+		payload["content"] = msg.Content
+	}
+	if acc.ReplyQuoteEnabled() && msg.ReplyToID != "" {
+		payload["message_reference"] = map[string]any{"message_id": msg.ReplyToID}
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encoding discord payload_json: %w", err)
+	}
+	contentType, body, err := sdk.EncodeMultipart(map[string]string{"payload_json": string(payloadJSON)}, "files[0]", name, data)
+	if err != nil {
+		return fmt.Errorf("encoding discord file upload: %w", err)
+	}
+	reqURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", channelID)
+	resp, err := ctx.HTTP().DoWithAuth("POST", reqURL, "Bot "+token, map[string]string{
+		"Content-Type": contentType,
+	}, body)
+	if err != nil {
+		return fmt.Errorf("discord file upload failed: %w", err)
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return fmt.Errorf("discord file upload returned HTTP %d: %s", resp.Status, resp.Body)
+	}
+	_ = ctx.EventBus().Emit("channel.discord.sent", map[string]string{
+		"account_id": acc.AccountID,
+		"channel_id": channelID,
+		"chat_id":    channelID,
+		"status":     "sent",
+		"file_name":  name,
 	})
 	return nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/actonos/plugin-sdk/sdk"
 )
@@ -65,6 +66,10 @@ func (s *SlackChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) err
 		return nil
 	}
 
+	if name, _, data, ok := msg.AttachedFile(); ok {
+		return sendSlackFile(ctx, token, channelID, msg, acc, name, data)
+	}
+
 	chunks := sdk.SplitMessage(msg.Content, 3900)
 	var lastTS string
 
@@ -106,6 +111,49 @@ func (s *SlackChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) err
 		"chat_id":    channelID,
 		"ts":         lastTS,
 		"chunks":     strconv.Itoa(len(chunks)),
+	})
+	return nil
+}
+
+func sendSlackFile(ctx sdk.Context, token, channelID string, msg sdk.OutboundMessage, acc SlackAccount, name string, data []byte) error {
+	fields := map[string]string{
+		"channels": channelID,
+		"filename": name,
+	}
+	if strings.TrimSpace(msg.Content) != "" {
+		fields["initial_comment"] = msg.Content
+	}
+	if acc.ReplyQuoteEnabled() {
+		if threadTS := sdk.FirstNonEmpty(msg.ThreadID, msg.ReplyToID); threadTS != "" {
+			fields["thread_ts"] = threadTS
+		}
+	}
+	contentType, body, err := sdk.EncodeMultipart(fields, "file", name, data)
+	if err != nil {
+		return fmt.Errorf("encoding slack file upload: %w", err)
+	}
+	resp, err := ctx.HTTP().DoWithAuth("POST", "https://slack.com/api/files.upload", "Bearer "+token, map[string]string{
+		"Content-Type": contentType,
+	}, body)
+	if err != nil {
+		return fmt.Errorf("slack files.upload failed: %w", err)
+	}
+	if resp.Status != 200 {
+		return fmt.Errorf("slack files.upload returned HTTP %d: %s", resp.Status, resp.Body)
+	}
+	var result struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := resp.JSON(&result); err == nil && !result.OK {
+		return fmt.Errorf("slack files.upload error: %s", result.Error)
+	}
+	_ = ctx.EventBus().Emit("channel.slack.sent", map[string]string{
+		"account_id": acc.AccountID,
+		"channel_id": channelID,
+		"chat_id":    channelID,
+		"status":     "sent",
+		"file_name":  name,
 	})
 	return nil
 }

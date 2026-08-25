@@ -159,6 +159,11 @@ func TestZaloBotPlatformPluginWasm(t *testing.T) {
 		t.Fatalf("send voice failed: %v", err)
 	}
 
+	hostFile := sdk.NewOutboundFile("zalo", "user_zalo_ted", "File từ workspace", "notes.pdf", "application/pdf", []byte("%PDF-1.7"))
+	if err := runner.SendChannelMessage(hostFile); err != nil {
+		t.Fatalf("send host file_data failed: %v", err)
+	}
+
 	// 5. Test Explicit Typing indicator
 	typingMsg := sdk.NewOutboundMessage("zalo", "user_zalo_ted", "")
 	typingMsg.Metadata["typing"] = "true"

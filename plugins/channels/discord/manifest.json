@@ -1,7 +1,7 @@
 {
   "id": "channel-discord",
   "name": "Discord",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Discord Bot integration for ActonOS AI agents with rich embeds, multi-account gateway, and agent routing",
   "author": "ActonOS",
   "license": "MIT",

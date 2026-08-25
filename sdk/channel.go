@@ -61,6 +61,16 @@ func NewOutboundMessage(channelID, recipient, content string) OutboundMessage {
 	}
 }
 
+// NewOutboundFile creates a media outbound message carrying a host-forwarded file.
+func NewOutboundFile(channelID, recipient, caption, fileName, mimeType string, data []byte) OutboundMessage {
+	msg := NewOutboundMessage(channelID, recipient, caption)
+	msg.Kind = MessageKindMedia
+	msg.FileName = fileName
+	msg.MIMEType = mimeType
+	msg.FileData = data
+	return msg
+}
+
 // ExtractAgentMention parses @agent_name, /agent agent_name, or /ask agent_name from text.
 // Returns the extracted agent identifier (or "") and the cleaned content without mention prefix.
 // Matches ActonOS Daemon channel router specification.

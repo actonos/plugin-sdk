@@ -413,6 +413,18 @@ func TestOutboundEnvelopeAliases(t *testing.T) {
 	if reactionOnly.Kind != sdk.MessageKindReaction {
 		t.Errorf("expected reaction kind, got %q", reactionOnly.Kind)
 	}
+
+	fileMsg := sdk.NewOutboundFile("telegram", "888", "caption", "report.pdf", "application/pdf", []byte("%PDF"))
+	fileMsg.Normalize()
+	if fileMsg.Kind != sdk.MessageKindMedia {
+		t.Errorf("expected media kind, got %q", fileMsg.Kind)
+	}
+	if !fileMsg.HasMedia() {
+		t.Error("expected HasMedia for file_data")
+	}
+	if fileMsg.Metadata["file_name"] != "report.pdf" {
+		t.Errorf("file_name metadata=%q", fileMsg.Metadata["file_name"])
+	}
 }
 
 func TestChannelAccountFeatureDefaults(t *testing.T) {

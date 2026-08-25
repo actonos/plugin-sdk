@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/actonos/plugin-sdk/sdk"
 )
@@ -83,6 +84,10 @@ func (w *WhatsAppChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 		}
 	} else if msg.Kind == sdk.MessageKindReaction && msg.IsControlOnly() {
 		return nil
+	}
+
+	if name, mime, data, ok := msg.AttachedFile(); ok {
+		return sendWhatsAppFile(ctx, token, phoneID, recipient, msg, acc, name, mime, data)
 	}
 
 	reqURL := fmt.Sprintf("%s/%s/messages", whatsappGraphAPI, phoneID)
@@ -227,6 +232,80 @@ func addWhatsAppReaction(ctx sdk.Context, token, phoneID, recipient, messageID, 
 		},
 	}
 	_, _ = ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
+}
+
+func sendWhatsAppFile(ctx sdk.Context, token, phoneID, recipient string, msg sdk.OutboundMessage, acc WhatsAppAccount, name, mime string, data []byte) error {
+	kind := sdk.FileKind(name, mime)
+	waType := "document"
+	switch kind {
+	case "photo":
+		waType = "image"
+	case "voice":
+		waType = "audio"
+	case "video":
+		waType = "video"
+	}
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	fields := map[string]string{
+		"messaging_product": "whatsapp",
+		"type":              mime,
+	}
+	contentType, body, err := sdk.EncodeMultipart(fields, "file", name, data)
+	if err != nil {
+		return fmt.Errorf("encoding whatsapp media upload: %w", err)
+	}
+	uploadURL := fmt.Sprintf("%s/%s/media", whatsappGraphAPI, phoneID)
+	uploadResp, err := ctx.HTTP().DoWithAuth("POST", uploadURL, "Bearer "+token, map[string]string{
+		"Content-Type": contentType,
+	}, body)
+	if err != nil {
+		return fmt.Errorf("whatsapp media upload failed: %w", err)
+	}
+	if uploadResp.Status < 200 || uploadResp.Status >= 300 {
+		return fmt.Errorf("whatsapp media upload returned HTTP %d: %s", uploadResp.Status, uploadResp.Body)
+	}
+	var uploaded struct {
+		ID string `json:"id"`
+	}
+	if err := uploadResp.JSON(&uploaded); err != nil || uploaded.ID == "" {
+		return fmt.Errorf("whatsapp media upload missing id: %s", uploadResp.Body)
+	}
+
+	media := map[string]string{"id": uploaded.ID}
+	if strings.TrimSpace(msg.Content) != "" && waType != "audio" {
+		media["caption"] = msg.Content
+	}
+	if waType == "document" {
+		media["filename"] = name
+	}
+	payload := map[string]any{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                recipient,
+		"type":              waType,
+		waType:              media,
+	}
+	if acc.ReplyQuoteEnabled() && msg.ReplyToID != "" {
+		payload["context"] = map[string]string{"message_id": msg.ReplyToID}
+	}
+	reqURL := fmt.Sprintf("%s/%s/messages", whatsappGraphAPI, phoneID)
+	resp, err := ctx.HTTP().PostJSONWithBearer(reqURL, token, payload)
+	if err != nil {
+		return fmt.Errorf("whatsapp send media failed: %w", err)
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return fmt.Errorf("whatsapp send media returned HTTP %d: %s", resp.Status, resp.Body)
+	}
+	_ = ctx.EventBus().Emit("channel.whatsapp.sent", map[string]string{
+		"account_id": acc.AccountID,
+		"recipient":  recipient,
+		"chat_id":    recipient,
+		"status":     "sent",
+		"file_name":  name,
+	})
+	return nil
 }
 
 func activeWhatsAppAccounts(cfg WhatsAppConfig) []WhatsAppAccount {

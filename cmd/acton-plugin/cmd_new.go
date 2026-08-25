@@ -230,6 +230,12 @@ type %sChannel struct {
 }
 
 func (c *%sChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error {
+	if name, mime, data, ok := msg.AttachedFile(); ok {
+		ctx.Log().Info("Sending host-forwarded file", "recipient", msg.Recipient, "name", name, "mime", mime, "bytes", len(data))
+		// Example: contentType, body, err := sdk.EncodeMultipart(fields, "file", name, data)
+		// return ctx.HTTP().Post(uploadURL, contentType, body)
+		return nil
+	}
 	ctx.Log().Info("Sending outbound message", "recipient", msg.Recipient, "content", msg.Content)
 	// Example: Call channel API using ctx.HTTP().PostJSON(...) or ctx.HTTP().PostJSONWithBearer(...)
 	return nil

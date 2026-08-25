@@ -19,6 +19,7 @@ WASM ABI remains `1.0.0`. Extra JSON fields are `omitempty`; older hosts ignore 
 - Shared I/O envelope on `InboundMessage` / `OutboundMessage`:
   - `kind` (`text` | `typing` | `reaction` | `media`)
   - `message_id`, `chat_id`, `thread_id`, `reply_to_id`, `reaction`, `typing`, `action`
+  - Host-forwarded files: `file_name`, `mime_type`, `file_data` (`msg.AttachedFile()`, `sdk.EncodeMultipart`)
 - `sdk.ChannelAccount`, `Normalize()`, `ApplyInboundEnvelope()`, and `MapReactionForPlatform()` so plugins and the host share one contract.
 - `acton-plugin new --type=channel` scaffolds the same account schema.
 
@@ -29,6 +30,7 @@ Built-in channels honor the envelope:
 | Typing | Discord `POST /typing`; Telegram/Zalo `sendChatAction`; WhatsApp `typing_indicator` (Cloud API v21). Slack Web API has no typing endpoint (accepted as no-op). |
 | Ack reaction | Default 👀 on inbound (Slack maps to `eyes`). |
 | Quote reply | Discord `message_reference`; Telegram/Zalo `reply_to_message_id`; Slack `thread_ts`; WhatsApp `context.message_id`. |
+| File | Host sends `file_data`; plugin uploads. Telegram `sendDocument`/`sendPhoto`/`sendVideo`; Discord `files[0]`; Zalo `sendDocument`/`sendPhoto`; Slack `files.upload`; WhatsApp `/media` then send. |
 
 WhatsApp is multi-account (`access_token` + `phone_number_id`).
 

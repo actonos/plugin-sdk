@@ -84,4 +84,9 @@ func TestDiscordPluginWasm(t *testing.T) {
 	if err := runner.SendChannelMessage(outMsg); err != nil {
 		t.Fatalf("send message failed: %v", err)
 	}
+
+	fileMsg := sdk.NewOutboundFile("discord", "12345", "log", "build.log", "text/plain", []byte("ok"))
+	if err := runner.SendChannelMessage(fileMsg); err != nil {
+		t.Fatalf("send file failed: %v", err)
+	}
 }

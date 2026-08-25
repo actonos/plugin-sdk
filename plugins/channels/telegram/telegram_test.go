@@ -53,6 +53,10 @@ func TestTelegramPluginWasm(t *testing.T) {
 		Status: 200,
 		Body:   `{"ok": true, "result": {"message_id": 43}}`,
 	})
+	mockHost.MockHTTPRoute("https://api.telegram.org/bottest_bot_token_123/sendDocument", host.HTTPMockResponse{
+		Status: 200,
+		Body:   `{"ok": true, "result": {"message_id": 44}}`,
+	})
 
 	runner, err := mockHost.LoadPluginFromFile(ctx, wasmPath)
 	if err != nil {
@@ -88,5 +92,10 @@ func TestTelegramPluginWasm(t *testing.T) {
 	outMsg := sdk.NewOutboundMessage("telegram", "888", "Hello Alice from ActonOS Agent!")
 	if err := runner.SendChannelMessage(outMsg); err != nil {
 		t.Fatalf("send message failed: %v", err)
+	}
+
+	fileMsg := sdk.NewOutboundFile("telegram", "888", "Báo cáo", "report.pdf", "application/pdf", []byte("%PDF-1.7"))
+	if err := runner.SendChannelMessage(fileMsg); err != nil {
+		t.Fatalf("send file failed: %v", err)
 	}
 }

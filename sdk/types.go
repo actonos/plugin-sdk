@@ -149,6 +149,9 @@ type OutboundMessage struct {
 	Action    string            `json:"action,omitempty"`
 	Typing    bool              `json:"typing,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
+	FileName  string            `json:"file_name,omitempty"`
+	MIMEType  string            `json:"mime_type,omitempty"`
+	FileData  []byte            `json:"file_data,omitempty"`
 }
 
 // HTTPRequest represents a sandboxed outbound HTTP request.

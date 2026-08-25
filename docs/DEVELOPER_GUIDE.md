@@ -75,13 +75,14 @@ Embed `sdk.ChannelAccount` in the plugin account struct. Legacy root-level token
 
 **Inbound** (`sdk.InboundMessage`): `kind`, `message_id`, `chat_id`, `thread_id`, `timestamp`, `reaction`.
 
-**Outbound** (`sdk.OutboundMessage`): `kind` (`text` \| `typing` \| `reaction` \| `media`), `chat_id`, `reply_to_id`, `thread_id`, `reaction`, `action`, `typing`.
+**Outbound** (`sdk.OutboundMessage`): `kind` (`text` \| `typing` \| `reaction` \| `media`), `chat_id`, `reply_to_id`, `thread_id`, `reaction`, `action`, `typing`, `file_name`, `mime_type`, `file_data`.
 
 | Host intent | How to send | Plugin mapping |
 |:---|:---|:---|
 | Typing | `kind=typing` or `typing=true` or empty content | Discord `POST /typing`, Telegram/Zalo `sendChatAction`, WhatsApp `typing_indicator`, Slack no-op |
 | Ack / react | `kind=reaction` + `reaction` + `reply_to_id` | Discord reactions, Telegram/Zalo `setMessageReaction`, Slack `reactions.add`, WhatsApp `type=reaction` |
 | Quote reply | `reply_to_id` with `enable_reply_quote` | Discord `message_reference`, Telegram/Zalo `reply_to_message_id`, Slack `thread_ts`, WhatsApp `context.message_id` |
+| File / document | `file_name` + `file_data` (raw bytes; JSON is base64) + optional caption in `content` | `msg.AttachedFile()` then platform upload. Telegram `sendDocument`/`sendPhoto`, Discord `files[0]`, Zalo `sendDocument`/`sendPhoto`, Slack `files.upload`, WhatsApp `/media` then send |
 
 Use `sdk.ApplyInboundEnvelope(&msg, chatID, messageID, threadID, timestamp)` when emitting inbound events.
 
@@ -94,6 +95,16 @@ func (c *MyChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) error 
     token, _ := ctx.Vault().GetSecret("channel_token")
     if msg.WantsTyping() {
         // emit platform typing, return if msg.IsTypingOnly()
+    }
+    if name, _, data, ok := msg.AttachedFile(); ok {
+        contentType, body, err := sdk.EncodeMultipart(map[string]string{
+            "to": sdk.FirstNonEmpty(msg.ChatID, msg.Recipient),
+        }, "file", name, data)
+        if err != nil {
+            return err
+        }
+        _, err = ctx.HTTP().Post("https://api.mychat.com/upload", contentType, body)
+        return err
     }
     return ctx.HTTP().PostJSONWithBearer("https://api.mychat.com/send", token, map[string]any{
         "to":   sdk.FirstNonEmpty(msg.ChatID, msg.Recipient),

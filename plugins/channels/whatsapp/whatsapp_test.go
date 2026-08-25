@@ -58,6 +58,10 @@ func TestWhatsAppPluginWasm(t *testing.T) {
 		Status: 200,
 		Body:   `{"messaging_product": "whatsapp", "contacts": [{"input": "+84901234567", "wa_id": "+84901234567"}], "messages": [{"id": "wamid.HBgL_OUT"}]}`,
 	})
+	mockHost.MockHTTPRoute("https://graph.facebook.com/v21.0/10987654321/media", host.HTTPMockResponse{
+		Status: 200,
+		Body:   `{"id": "media-123"}`,
+	})
 
 	runner, err := mockHost.LoadPluginFromFile(ctx, wasmPath)
 	if err != nil {
@@ -69,6 +73,11 @@ func TestWhatsAppPluginWasm(t *testing.T) {
 	outMsg := sdk.NewOutboundMessage("whatsapp", "+84901234567", "Here is your AI news summary!")
 	if err := runner.SendChannelMessage(outMsg); err != nil {
 		t.Fatalf("send message failed: %v", err)
+	}
+
+	fileMsg := sdk.NewOutboundFile("whatsapp", "+84901234567", "invoice", "invoice.pdf", "application/pdf", []byte("%PDF"))
+	if err := runner.SendChannelMessage(fileMsg); err != nil {
+		t.Fatalf("send file failed: %v", err)
 	}
 
 	// 2. Poll webhook queue

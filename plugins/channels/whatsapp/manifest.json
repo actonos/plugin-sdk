@@ -1,7 +1,7 @@
 {
   "id": "channel-whatsapp",
   "name": "WhatsApp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "WhatsApp Business Cloud API integration for ActonOS AI agents with text, template messaging, and agent routing",
   "author": "ActonOS",
   "license": "MIT",

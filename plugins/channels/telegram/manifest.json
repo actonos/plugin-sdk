@@ -1,7 +1,7 @@
 {
   "id": "channel-telegram",
   "name": "Telegram",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Telegram Bot integration for ActonOS AI agents with MarkdownV2, multi-bot accounts, and agent routing",
   "author": "ActonOS",
   "license": "MIT",

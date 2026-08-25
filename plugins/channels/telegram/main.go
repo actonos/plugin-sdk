@@ -83,6 +83,10 @@ func (t *TelegramChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) 
 		return nil
 	}
 
+	if name, mime, data, ok := msg.AttachedFile(); ok {
+		return sendTelegramFile(ctx, token, chatID, msg, acc, name, mime, data)
+	}
+
 	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 	chunks := sdk.SplitMessage(msg.Content, 3900)
 
@@ -248,6 +252,45 @@ func (t *TelegramChannel) PollMessages(ctx sdk.Context) ([]sdk.InboundMessage, e
 	}
 
 	return allInbound, nil
+}
+
+func sendTelegramFile(ctx sdk.Context, token, chatID string, msg sdk.OutboundMessage, acc TelegramAccount, name, mime string, data []byte) error {
+	kind := sdk.FileKind(name, mime)
+	method, field := "sendDocument", "document"
+	switch kind {
+	case "photo":
+		method, field = "sendPhoto", "photo"
+	case "voice":
+		method, field = "sendAudio", "audio"
+	case "video":
+		method, field = "sendVideo", "video"
+	}
+	fields := map[string]string{"chat_id": chatID}
+	if strings.TrimSpace(msg.Content) != "" {
+		fields["caption"] = msg.Content
+	}
+	if acc.ReplyQuoteEnabled() && msg.ReplyToID != "" {
+		fields["reply_to_message_id"] = msg.ReplyToID
+	}
+	contentType, body, err := sdk.EncodeMultipart(fields, field, name, data)
+	if err != nil {
+		return fmt.Errorf("encoding telegram file upload: %w", err)
+	}
+	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method)
+	resp, err := ctx.HTTP().Post(reqURL, contentType, body)
+	if err != nil {
+		return fmt.Errorf("telegram file upload failed: %w", err)
+	}
+	if resp.Status != 200 {
+		return fmt.Errorf("telegram file upload returned HTTP %d: %s", resp.Status, resp.Body)
+	}
+	_ = ctx.EventBus().Emit("channel.telegram.sent", map[string]string{
+		"account_id": acc.AccountID,
+		"chat_id":    chatID,
+		"status":     "sent",
+		"file_name":  name,
+	})
+	return nil
 }
 
 func sendTelegramChatAction(ctx sdk.Context, token, chatID, action string) {

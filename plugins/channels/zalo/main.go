@@ -185,6 +185,10 @@ func (z *ZaloChannel) SendMessage(ctx sdk.Context, msg sdk.OutboundMessage) erro
 		replyToID = msg.ReplyToID
 	}
 
+	if name, mime, data, ok := msg.AttachedFile(); ok {
+		return sendZaloFile(ctx, token, chatID, msg.Content, replyToID, name, mime, data)
+	}
+
 	// 2. Handle image/photo attachments
 	photoURL := msg.Metadata["photo"]
 	if photoURL == "" {
@@ -698,6 +702,40 @@ func sendZaloPhoto(ctx sdk.Context, token, chatID, photoURL, caption, parseMode,
 
 	if resp.Status != 200 {
 		return fmt.Errorf("zalo sendPhoto returned status %d: %s", resp.Status, resp.Body)
+	}
+	return nil
+}
+
+func sendZaloFile(ctx sdk.Context, token, chatID, caption, replyToID, name, mime string, data []byte) error {
+	kind := sdk.FileKind(name, mime)
+	method, field := "sendDocument", "document"
+	switch kind {
+	case "photo":
+		method, field = "sendPhoto", "photo"
+	case "voice":
+		method, field = "sendVoice", "voice"
+	}
+	fields := map[string]string{"chat_id": chatID}
+	if caption != "" {
+		fields["caption"] = caption
+	}
+	if name != "" {
+		fields["file_name"] = name
+	}
+	if replyToID != "" {
+		fields["reply_to_message_id"] = replyToID
+	}
+	contentType, body, err := sdk.EncodeMultipart(fields, field, name, data)
+	if err != nil {
+		return fmt.Errorf("encoding zalo file upload: %w", err)
+	}
+	reqURL := fmt.Sprintf("%s/bot%s/%s", defaultZaloBotAPIBase, token, method)
+	resp, err := ctx.HTTP().Post(reqURL, contentType, body)
+	if err != nil {
+		return fmt.Errorf("zalo file upload failed: %w", err)
+	}
+	if resp.Status != 200 {
+		return fmt.Errorf("zalo file upload returned HTTP %d: %s", resp.Status, resp.Body)
 	}
 	return nil
 }

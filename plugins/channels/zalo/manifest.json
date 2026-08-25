@@ -1,7 +1,7 @@
 {
   "id": "channel-zalo",
   "name": "Zalo Bot",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Official Zalo Bot Platform (bot.zapps.me) API channel for ActonOS AI agents with Markdown rich text, instant live typing indicators, rich media (photos, documents, audio), auto quote replies, multi-account gateway, and intelligent agent routing",
   "author": "ActonOS",
   "license": "MIT",

@@ -21,6 +21,8 @@ const (
 	MetaTS               = "ts"
 	MetaTimestamp        = "timestamp"
 	MetaFrom             = "from"
+	MetaFileName         = "file_name"
+	MetaMIMEType         = "mime_type"
 )
 
 var mediaMetaKeys = []string{"photo", "image_url", "document", "file_url", "voice", "voice_url", "audio_url"}
@@ -194,7 +196,18 @@ func (m *OutboundMessage) Normalize() {
 		m.Metadata[MetaTyping] = "true"
 	}
 
-	if m.Kind == "" {
+	m.FileName = FirstNonEmpty(m.FileName, m.Metadata[MetaFileName])
+	if m.FileName != "" {
+		setMetaIfEmpty(m.Metadata, MetaFileName, m.FileName)
+	}
+	m.MIMEType = FirstNonEmpty(m.MIMEType, m.Metadata[MetaMIMEType])
+	if m.MIMEType != "" {
+		setMetaIfEmpty(m.Metadata, MetaMIMEType, m.MIMEType)
+	}
+
+	if len(m.FileData) > 0 {
+		m.Kind = MessageKindMedia
+	} else if m.Kind == "" {
 		switch {
 		case m.Typing && m.IsControlOnly() && m.Reaction == "":
 			m.Kind = MessageKindTyping
@@ -219,9 +232,26 @@ func (m OutboundMessage) WantsTyping() bool {
 	return false
 }
 
-// HasMedia reports whether platform-specific media attachments are present in metadata.
+// HasMedia reports whether a file or platform media metadata is present.
 func (m OutboundMessage) HasMedia() bool {
-	return hasMediaMeta(m.Metadata)
+	return len(m.FileData) > 0 || strings.TrimSpace(m.FileName) != "" || hasMediaMeta(m.Metadata)
+}
+
+// AttachedFile returns the host-forwarded file payload, if any.
+func (m OutboundMessage) AttachedFile() (name, mimeType string, data []byte, ok bool) {
+	if len(m.FileData) == 0 {
+		return "", "", nil, false
+	}
+	name = FirstNonEmpty(m.FileName, metadataValue(m.Metadata, MetaFileName), "file")
+	mimeType = FirstNonEmpty(m.MIMEType, metadataValue(m.Metadata, MetaMIMEType))
+	return name, mimeType, m.FileData, true
+}
+
+func metadataValue(meta map[string]string, key string) string {
+	if meta == nil {
+		return ""
+	}
+	return meta[key]
 }
 
 // IsControlOnly reports a payload with no text and no media (typing and/or reaction only).
