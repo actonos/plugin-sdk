@@ -466,3 +466,46 @@ func TestMapReactionForPlatform(t *testing.T) {
 		t.Errorf("discord 👀 -> %q", got)
 	}
 }
+
+func TestWorkspaceClient(t *testing.T) {
+	ctx := sdk.NewContext()
+	ws := ctx.Workspace()
+
+	// 1. Save text file
+	saveResp, err := ws.SaveText("docs/notes.txt", "hello actonos workspace")
+	if err != nil {
+		t.Fatalf("failed to save workspace text file: %v", err)
+	}
+	if saveResp.Path != "docs/notes.txt" {
+		t.Errorf("expected path docs/notes.txt, got %s", saveResp.Path)
+	}
+
+	// 2. Read file
+	readResp, err := ws.ReadFile("docs/notes.txt")
+	if err != nil {
+		t.Fatalf("failed to read workspace file: %v", err)
+	}
+	if readResp.Path != "docs/notes.txt" {
+		t.Errorf("expected read path docs/notes.txt, got %s", readResp.Path)
+	}
+
+	// 3. Read binary
+	data, binResp, err := ws.ReadBinary("docs/notes.txt")
+	if err != nil {
+		t.Fatalf("failed to read workspace binary: %v", err)
+	}
+	if binResp == nil || len(data) == 0 {
+		t.Fatalf("expected binary data from workspace read")
+	}
+
+	// 4. Save binary image file
+	imgBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	imgResp, err := ws.SaveFile("images/sample.png", imgBytes, "image/png")
+	if err != nil {
+		t.Fatalf("failed to save binary file to workspace: %v", err)
+	}
+	if imgResp.MIMEType != "image/png" {
+		t.Errorf("expected mime image/png, got %s", imgResp.MIMEType)
+	}
+}
+

@@ -18,9 +18,11 @@ type NativeFallbackHandler struct {
 	BusEmitFunc  func(topic string, payload []byte) int32
 	WSConnectFunc func(url string, headers map[string]string) int32
 	WSSendFunc   func(handleID int32, msgType int32, data []byte) int32
-	WSPollFunc   func(handleID int32) []byte
-	WSCloseFunc  func(handleID int32) int32
-	wsConns      map[int32]*mockWSConn
+	WSPollFunc        func(handleID int32) []byte
+	WSCloseFunc       func(handleID int32) int32
+	WorkspaceSaveFunc func(reqJSON []byte) []byte
+	WorkspaceReadFunc func(reqJSON []byte) []byte
+	wsConns           map[int32]*mockWSConn
 	nextWSHandle int32
 	lastResponse []byte
 }
@@ -228,3 +230,69 @@ func WSClose(handleID int32) int32 {
 	}
 	return 0
 }
+
+func WorkspaceSaveFile(reqPtr uint32, reqLen uint32) int32 {
+	reqBytes := PtrToBytes(reqPtr, reqLen)
+	var resBytes []byte
+	if fallbackHandler.WorkspaceSaveFunc != nil {
+		resBytes = fallbackHandler.WorkspaceSaveFunc(reqBytes)
+	} else {
+		var req struct {
+			Path     string `json:"path"`
+			Name     string `json:"name"`
+			MIMEType string `json:"mime_type"`
+		}
+		_ = json.Unmarshal(reqBytes, &req)
+		p := req.Path
+		if p == "" {
+			p = req.Name
+		}
+		mime := req.MIMEType
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		resBytes, _ = json.Marshal(map[string]any{
+			"id":         "ws_node_mock",
+			"name":       p,
+			"path":       p,
+			"url":        "/api/workspace/raw?path=" + p,
+			"size_bytes": 1024,
+			"mime_type":  mime,
+		})
+	}
+
+	fallbackHandler.mu.Lock()
+	fallbackHandler.lastResponse = resBytes
+	fallbackHandler.mu.Unlock()
+
+	return int32(len(resBytes))
+}
+
+func WorkspaceReadFile(reqPtr uint32, reqLen uint32) int32 {
+	reqBytes := PtrToBytes(reqPtr, reqLen)
+	var resBytes []byte
+	if fallbackHandler.WorkspaceReadFunc != nil {
+		resBytes = fallbackHandler.WorkspaceReadFunc(reqBytes)
+	} else {
+		var req struct {
+			Path string `json:"path"`
+		}
+		_ = json.Unmarshal(reqBytes, &req)
+		resBytes, _ = json.Marshal(map[string]any{
+			"id":             "ws_node_mock",
+			"name":           req.Path,
+			"path":           req.Path,
+			"url":            "/api/workspace/raw?path=" + req.Path,
+			"size_bytes":     12,
+			"mime_type":      "text/plain",
+			"content_base64": "bW9jayBjb250ZW50",
+		})
+	}
+
+	fallbackHandler.mu.Lock()
+	fallbackHandler.lastResponse = resBytes
+	fallbackHandler.mu.Unlock()
+
+	return int32(len(resBytes))
+}
+

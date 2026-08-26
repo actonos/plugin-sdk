@@ -62,3 +62,14 @@ func WSPoll(handleID int32) int32
 //go:wasmimport acton_ws ws_close
 func WSClose(handleID int32) int32
 
+// WorkspaceSaveFile saves a file into the User Workspace and returns the response byte length.
+//
+//go:wasmimport acton_workspace save_file
+func WorkspaceSaveFile(reqPtr uint32, reqLen uint32) int32
+
+// WorkspaceReadFile reads a file from the User Workspace and returns the response byte length.
+//
+//go:wasmimport acton_workspace read_file
+func WorkspaceReadFile(reqPtr uint32, reqLen uint32) int32
+
+

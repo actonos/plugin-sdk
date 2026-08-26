@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -28,7 +29,14 @@ type MockHost struct {
 	logs             []LogEntry
 	pendingResponses map[string][]byte
 	wsConns          map[int32]*mockHostWSConn
+	workspaceFiles   map[string]mockWorkspaceFile
 	nextWSHandle     int32
+}
+
+type mockWorkspaceFile struct {
+	Path     string
+	MIMEType string
+	Content  string
 }
 
 type mockHostWSConn struct {
@@ -71,6 +79,7 @@ func NewMockHost(ctx context.Context) (*MockHost, error) {
 		httpMocks:        make(map[string]HTTPMockResponse),
 		pendingResponses: make(map[string][]byte),
 		wsConns:          make(map[int32]*mockHostWSConn),
+		workspaceFiles:   make(map[string]mockWorkspaceFile),
 		nextWSHandle:     1,
 	}
 
@@ -426,6 +435,109 @@ func (h *MockHost) registerHostModules(ctx context.Context) error {
 		Export("ws_close")
 
 	if _, err := wsBuilder.Instantiate(ctx); err != nil {
+		return err
+	}
+
+	// 7. acton_workspace module
+	wsFileBuilder := h.runtime.NewHostModuleBuilder("acton_workspace")
+	wsFileBuilder.NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, reqPtr uint32, reqLen uint32) int32 {
+			reqBytes, ok := mod.Memory().Read(reqPtr, reqLen)
+			if !ok {
+				return -1
+			}
+
+			var req struct {
+				Path          string `json:"path"`
+				Name          string `json:"name"`
+				Content       string `json:"content"`
+				ContentBase64 string `json:"content_base64"`
+				MIMEType      string `json:"mime_type"`
+			}
+			_ = json.Unmarshal(reqBytes, &req)
+
+			targetPath := req.Path
+			if targetPath == "" {
+				targetPath = req.Name
+			}
+			if targetPath == "" {
+				targetPath = "file.dat"
+			}
+
+			rawContent := req.Content
+			if req.ContentBase64 != "" {
+				if b, err := base64.StdEncoding.DecodeString(req.ContentBase64); err == nil {
+					rawContent = string(b)
+				}
+			}
+
+			h.mu.Lock()
+			if h.workspaceFiles == nil {
+				h.workspaceFiles = make(map[string]mockWorkspaceFile)
+			}
+			h.workspaceFiles[targetPath] = mockWorkspaceFile{
+				Path:     targetPath,
+				MIMEType: req.MIMEType,
+				Content:  rawContent,
+			}
+			h.mu.Unlock()
+
+			resp := map[string]any{
+				"id":         "ws_node_" + targetPath,
+				"name":       targetPath,
+				"path":       targetPath,
+				"url":        "/api/workspace/raw?path=" + url.QueryEscape(targetPath),
+				"size_bytes": len(rawContent),
+				"mime_type":  req.MIMEType,
+			}
+			respBytes, _ := json.Marshal(resp)
+			return int32(h.setPendingResponse(mod.Name(), respBytes))
+		}).
+		Export("save_file")
+
+	wsFileBuilder.NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, reqPtr uint32, reqLen uint32) int32 {
+			reqBytes, ok := mod.Memory().Read(reqPtr, reqLen)
+			if !ok {
+				return -1
+			}
+
+			var req struct {
+				ID   string `json:"id"`
+				Path string `json:"path"`
+			}
+			_ = json.Unmarshal(reqBytes, &req)
+
+			lookup := req.Path
+			if lookup == "" {
+				lookup = req.ID
+			}
+
+			h.mu.RLock()
+			file, exists := h.workspaceFiles[lookup]
+			h.mu.RUnlock()
+
+			if !exists {
+				errResp := map[string]any{"error": "file not found in mock workspace"}
+				b, _ := json.Marshal(errResp)
+				return int32(h.setPendingResponse(mod.Name(), b))
+			}
+
+			resp := map[string]any{
+				"id":             "ws_node_" + file.Path,
+				"name":           file.Path,
+				"path":           file.Path,
+				"url":            "/api/workspace/raw?path=" + url.QueryEscape(file.Path),
+				"size_bytes":     len(file.Content),
+				"mime_type":      file.MIMEType,
+				"content_base64": base64.StdEncoding.EncodeToString([]byte(file.Content)),
+			}
+			respBytes, _ := json.Marshal(resp)
+			return int32(h.setPendingResponse(mod.Name(), respBytes))
+		}).
+		Export("read_file")
+
+	if _, err := wsFileBuilder.Instantiate(ctx); err != nil {
 		return err
 	}
 

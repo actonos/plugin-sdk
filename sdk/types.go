@@ -184,3 +184,25 @@ type ConnectorActionPayload struct {
 	Action string          `json:"action"`
 	Params json.RawMessage `json:"params"`
 }
+
+// WorkspaceSavePayload represents a request to save a file into the User Workspace.
+type WorkspaceSavePayload struct {
+	Path          string `json:"path"`
+	Name          string `json:"name,omitempty"`
+	Content       string `json:"content,omitempty"`
+	ContentBase64 string `json:"content_base64,omitempty"`
+	MIMEType      string `json:"mime_type,omitempty"`
+}
+
+// WorkspaceFileResponse represents the result of saving or reading a workspace file.
+type WorkspaceFileResponse struct {
+	ID            string `json:"id,omitempty"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	URL           string `json:"url"`
+	SizeBytes     int64  `json:"size_bytes"`
+	MIMEType      string `json:"mime_type"`
+	ContentBase64 string `json:"content_base64,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+

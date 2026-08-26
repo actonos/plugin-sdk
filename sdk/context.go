@@ -20,6 +20,9 @@ type Context interface {
 	// EventBus provides access to the internal message broker.
 	EventBus() EventBus
 
+	// Workspace provides sandboxed file operations in the ActonOS User Workspace.
+	Workspace() WorkspaceClient
+
 	// Log provides structured logging to ActonOS daemon.
 	Log() Logger
 }
@@ -113,3 +116,19 @@ type Logger interface {
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
 }
+
+// WorkspaceClient provides sandboxed file operations in the ActonOS User Workspace.
+type WorkspaceClient interface {
+	// SaveFile stores binary data into the workspace at the target path.
+	SaveFile(path string, data []byte, mimeType string) (*WorkspaceFileResponse, error)
+
+	// SaveText stores text content into the workspace at the target path.
+	SaveText(path string, text string) (*WorkspaceFileResponse, error)
+
+	// ReadFile retrieves a workspace file node by path or ID.
+	ReadFile(pathOrID string) (*WorkspaceFileResponse, error)
+
+	// ReadBinary retrieves a workspace file and returns decoded binary bytes.
+	ReadBinary(pathOrID string) ([]byte, *WorkspaceFileResponse, error)
+}
+

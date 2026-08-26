@@ -102,8 +102,8 @@ func acton_tool_execute(namePtr uint32, nameLen uint32, argsPtr uint32, argsLen 
 	} else {
 		runtime.Gosched()
 	}
-	defer runtime.Gosched()
 	defer func() {
+		runtime.GC()
 		if r := recover(); r != nil {
 			errResult := NewResultError(fmt.Sprintf("plugin panic: %v", r))
 			b, _ := json.Marshal(errResult)

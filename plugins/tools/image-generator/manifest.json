@@ -1,0 +1,258 @@
+{
+  "id": "tool-image-generator",
+  "name": "AI Image Generator",
+  "version": "1.0.0",
+  "description": "AI Image generation plugin for ActonOS supporting multi-providers (OpenAI, Grok, NanoBanana), binary reference images, background queue processing, and direct session messaging.",
+  "author": "ActonOS Team",
+  "license": "MIT",
+  "capabilities": [
+    "tool"
+  ],
+  "permissions": {
+    "net_outbound": [
+      "api.openai.com",
+      "*.openai.com",
+      "api.x.ai",
+      "*.x.ai",
+      "generativelanguage.googleapis.com",
+      "*.googleapis.com"
+    ],
+    "secrets": [
+      "openai_api_key",
+      "grok_api_key",
+      "nanobanana_api_key"
+    ],
+    "storage": true,
+    "workspace": true,
+    "bus_events": [
+      "session.message.outbound",
+      "image.generation.completed"
+    ]
+  },
+  "config_schema": {
+    "type": "object",
+    "required": [
+      "provider"
+    ],
+    "properties": {
+      "provider": {
+        "type": "string",
+        "title": "Default AI Image Provider",
+        "description": "Select the primary backend service for generating images",
+        "enum": [
+          "openai",
+          "nanobanana",
+          "grok"
+        ],
+        "default": "openai",
+        "x-ui-group": "General Settings",
+        "x-order": 1
+      },
+      "openai_api_key": {
+        "type": "string",
+        "title": "OpenAI API Key",
+        "description": "API Key for OpenAI image generation models",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "sk-proj-...",
+        "x-ui-group": "Provider Credentials",
+        "x-order": 2
+      },
+      "grok_api_key": {
+        "type": "string",
+        "title": "Grok (xAI) API Key",
+        "description": "API Key for xAI Grok image generation models",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "xai-...",
+        "x-ui-group": "Provider Credentials",
+        "x-order": 3
+      },
+      "nanobanana_api_key": {
+        "type": "string",
+        "title": "Nano Banana API Key",
+        "description": "API Key for NanoBanana image generation models",
+        "x-secret": true,
+        "x-ui-widget": "password",
+        "x-ui-placeholder": "nb_...",
+        "x-ui-group": "Provider Credentials",
+        "x-order": 4
+      },
+      "openai_model": {
+        "type": "string",
+        "title": "OpenAI Model",
+        "description": "Default model for OpenAI image generation",
+        "enum": [
+          "gpt-image-2",
+          "gpt-image-2-2026-04-21",
+          "gpt-image-1.5",
+          "gpt-image-1",
+          "gpt-image-1-mini",
+          "dall-e-3",
+          "dall-e-2"
+        ],
+        "default": "gpt-image-1.5",
+        "x-ui-group": "Model Selection",
+        "x-order": 5
+      },
+      "grok_model": {
+        "type": "string",
+        "title": "Grok Model",
+        "description": "Default model for xAI Grok image generation",
+        "enum": [
+          "grok-imagine-image-2.0",
+          "grok-2-image",
+          "grok-vision-beta"
+        ],
+        "default": "grok-imagine-image-2.0",
+        "x-ui-group": "Model Selection",
+        "x-order": 6
+      },
+      "nanobanana_model": {
+        "type": "string",
+        "title": "NanoBanana Model",
+        "description": "Default model for NanoBanana (Google Generative Language) image generation",
+        "enum": [
+          "gemini-3.1-flash-lite-image",
+          "gemini-3.1-flash-image",
+          "gemini-3-pro-image",
+          "imagen-3.0-generate-002",
+          "imagen-3.0-fast-generate-001"
+        ],
+        "default": "gemini-3.1-flash-lite-image",
+        "x-ui-group": "Model Selection",
+        "x-order": 7
+      },
+      "openai_base_url": {
+        "type": "string",
+        "title": "OpenAI Base URL",
+        "description": "Custom API Base URL or reverse proxy endpoint (defaults to https://api.openai.com/v1)",
+        "default": "https://api.openai.com/v1",
+        "x-ui-placeholder": "https://api.openai.com/v1",
+        "x-ui-group": "Endpoint Settings",
+        "x-order": 8
+      },
+      "openai_organization": {
+        "type": "string",
+        "title": "OpenAI Organization ID",
+        "description": "Optional Organization ID (org-...)",
+        "x-ui-placeholder": "org-...",
+        "x-ui-group": "Endpoint Settings",
+        "x-order": 9
+      },
+      "openai_project": {
+        "type": "string",
+        "title": "OpenAI Project ID",
+        "description": "Optional Project ID (proj_...)",
+        "x-ui-placeholder": "proj_...",
+        "x-ui-group": "Endpoint Settings",
+        "x-order": 10
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "generate_image",
+      "description": "Generate an AI image based on a prompt. Returns an image_url (/api/workspace/raw?id=...) that you MUST render in your final response using Markdown image syntax: ![Generated Image](image_url).",
+      "category": "image",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Detailed text prompt describing the image to generate"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "high",
+              "medium",
+              "low",
+              "hd",
+              "standard"
+            ],
+            "default": "auto",
+            "description": "Image quality level"
+          },
+          "background": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "transparent",
+              "opaque"
+            ],
+            "description": "Image background type (supported for GPT image models)"
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ],
+            "description": "Output image format (png, jpeg, webp)"
+          },
+          "reference_images": {
+            "type": "array",
+            "description": "Optional list of binary reference images (base64 encoded or data URIs) for style, image-to-image or editing",
+            "items": {
+              "type": "object",
+              "properties": {
+                "data_base64": {
+                  "type": "string",
+                  "description": "Base64-encoded image binary data or data URI"
+                },
+                "image_url": {
+                  "type": "string",
+                  "description": "HTTP/HTTPS image URL if already hosted"
+                },
+                "mime_type": {
+                  "type": "string",
+                  "description": "Image MIME type e.g. image/png, image/jpeg, image/webp"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Optional filename for reference image e.g. reference.png"
+                },
+                "strength": {
+                  "type": "number",
+                  "description": "Reference influence weight (0.0 to 1.0)"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "subject",
+                    "style",
+                    "mask",
+                    "controlnet"
+                  ],
+                  "description": "Reference role in image generation"
+                }
+              }
+            }
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "1:1",
+              "16:9",
+              "9:16",
+              "4:3",
+              "3:2"
+            ],
+            "default": "1:1",
+            "description": "Desired aspect ratio of the output image"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "ActonOS active chat session ID to push completed image results to"
+          }
+        }
+      }
+    }
+  ]
+}

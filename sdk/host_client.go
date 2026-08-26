@@ -11,36 +11,39 @@ import (
 )
 
 type defaultContext struct {
-	http     HTTPClient
-	ws       WebSocketClient
-	config   ConfigStore
-	vault    VaultClient
-	storage  KVStorage
-	eventBus EventBus
-	logger   Logger
+	http      HTTPClient
+	ws        WebSocketClient
+	config    ConfigStore
+	vault     VaultClient
+	storage   KVStorage
+	eventBus  EventBus
+	workspace WorkspaceClient
+	logger    Logger
 }
 
 // NewContext creates a default Context connected to Host ABI syscalls.
 func NewContext() Context {
 	storage := &defaultKVStorage{}
 	return &defaultContext{
-		http:     &defaultHTTPClient{},
-		ws:       &defaultWebSocketClient{},
-		config:   &defaultConfigStore{storage: storage},
-		vault:    &defaultVaultClient{},
-		storage:  storage,
-		eventBus: &defaultEventBus{},
-		logger:   &defaultLogger{},
+		http:      &defaultHTTPClient{},
+		ws:        &defaultWebSocketClient{},
+		config:    &defaultConfigStore{storage: storage},
+		vault:     &defaultVaultClient{},
+		storage:   storage,
+		eventBus:  &defaultEventBus{},
+		workspace: &defaultWorkspaceClient{},
+		logger:    &defaultLogger{},
 	}
 }
 
-func (c *defaultContext) HTTP() HTTPClient    { return c.http }
-func (c *defaultContext) WS() WebSocketClient { return c.ws }
-func (c *defaultContext) Config() ConfigStore { return c.config }
-func (c *defaultContext) Vault() VaultClient  { return c.vault }
-func (c *defaultContext) Storage() KVStorage  { return c.storage }
-func (c *defaultContext) EventBus() EventBus  { return c.eventBus }
-func (c *defaultContext) Log() Logger         { return c.logger }
+func (c *defaultContext) HTTP() HTTPClient         { return c.http }
+func (c *defaultContext) WS() WebSocketClient      { return c.ws }
+func (c *defaultContext) Config() ConfigStore      { return c.config }
+func (c *defaultContext) Vault() VaultClient       { return c.vault }
+func (c *defaultContext) Storage() KVStorage       { return c.storage }
+func (c *defaultContext) EventBus() EventBus       { return c.eventBus }
+func (c *defaultContext) Workspace() WorkspaceClient { return c.workspace }
+func (c *defaultContext) Log() Logger              { return c.logger }
 
 // --- HTTP Client Implementation ---
 
@@ -522,3 +525,108 @@ func (l *defaultLogger) Debug(msg string, args ...any) { l.logMsg(LogLevelDebug,
 func (l *defaultLogger) Info(msg string, args ...any)  { l.logMsg(LogLevelInfo, msg, args...) }
 func (l *defaultLogger) Warn(msg string, args ...any)  { l.logMsg(LogLevelWarn, msg, args...) }
 func (l *defaultLogger) Error(msg string, args ...any) { l.logMsg(LogLevelError, msg, args...) }
+
+// --- Workspace Client Implementation ---
+
+type defaultWorkspaceClient struct{}
+
+func (w *defaultWorkspaceClient) SaveFile(path string, data []byte, mimeType string) (*WorkspaceFileResponse, error) {
+	req := WorkspaceSavePayload{
+		Path:          path,
+		ContentBase64: base64.StdEncoding.EncodeToString(data),
+		MIMEType:      mimeType,
+	}
+	return w.doSave(req)
+}
+
+func (w *defaultWorkspaceClient) SaveText(path string, text string) (*WorkspaceFileResponse, error) {
+	req := WorkspaceSavePayload{
+		Path:     path,
+		Content:  text,
+		MIMEType: "text/plain",
+	}
+	return w.doSave(req)
+}
+
+func (w *defaultWorkspaceClient) doSave(req WorkspaceSavePayload) (*WorkspaceFileResponse, error) {
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling workspace save payload: %w", err)
+	}
+
+	reqPtr, reqLen := abi.BytesToPtr(reqBytes)
+	defer abi.Free(reqPtr, reqLen)
+
+	resLen := abi.WorkspaceSaveFile(reqPtr, reqLen)
+	if resLen <= 0 {
+		return nil, fmt.Errorf("workspace save file syscall failed (code: %d)", resLen)
+	}
+
+	destPtr := abi.Alloc(uint32(resLen))
+	if destPtr == 0 {
+		return nil, fmt.Errorf("failed to allocate %d bytes for workspace response", resLen)
+	}
+	defer abi.Free(destPtr, uint32(resLen))
+
+	abi.SysReadResponse(destPtr, uint32(resLen))
+	resBytes := abi.PtrToBytes(destPtr, uint32(resLen))
+
+	var resp WorkspaceFileResponse
+	if err := json.Unmarshal(resBytes, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshaling workspace response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("workspace save error: %s", resp.Error)
+	}
+	return &resp, nil
+}
+
+func (w *defaultWorkspaceClient) ReadFile(pathOrID string) (*WorkspaceFileResponse, error) {
+	req := map[string]string{
+		"path": pathOrID,
+		"id":   pathOrID,
+	}
+	reqBytes, _ := json.Marshal(req)
+
+	reqPtr, reqLen := abi.BytesToPtr(reqBytes)
+	defer abi.Free(reqPtr, reqLen)
+
+	resLen := abi.WorkspaceReadFile(reqPtr, reqLen)
+	if resLen <= 0 {
+		return nil, fmt.Errorf("workspace read file syscall failed (code: %d)", resLen)
+	}
+
+	destPtr := abi.Alloc(uint32(resLen))
+	if destPtr == 0 {
+		return nil, fmt.Errorf("failed to allocate %d bytes for workspace response", resLen)
+	}
+	defer abi.Free(destPtr, uint32(resLen))
+
+	abi.SysReadResponse(destPtr, uint32(resLen))
+	resBytes := abi.PtrToBytes(destPtr, uint32(resLen))
+
+	var resp WorkspaceFileResponse
+	if err := json.Unmarshal(resBytes, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshaling workspace response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("workspace read error: %s", resp.Error)
+	}
+	return &resp, nil
+}
+
+func (w *defaultWorkspaceClient) ReadBinary(pathOrID string) ([]byte, *WorkspaceFileResponse, error) {
+	resp, err := w.ReadFile(pathOrID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if resp.ContentBase64 != "" {
+		data, err := base64.StdEncoding.DecodeString(resp.ContentBase64)
+		if err != nil {
+			return nil, resp, fmt.Errorf("decoding workspace file base64: %w", err)
+		}
+		return data, resp, nil
+	}
+	return []byte(resp.ContentBase64), resp, nil
+}
+

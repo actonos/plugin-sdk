@@ -57,6 +57,11 @@
           "default": false,
           "description": "Whether isolated SQLite KV storage is enabled for this plugin"
         },
+        "workspace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether User Workspace file persistence is enabled for this plugin"
+        },
         "bus_events": {
           "type": "array",
           "items": { "type": "string" },
