@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -94,8 +96,8 @@ func init() {
 				return sdk.NewResultError(fmt.Sprintf("API key secret '%s' is not configured in Hardware Vault or plugin settings", secretKeyName)), nil
 			}
 
-			// Generate unique Job ID
-			jobID := fmt.Sprintf("img_%d", time.Now().UnixNano())
+			// Generate unique Job ID with timestamp and cryptographic random entropy
+			jobID := fmt.Sprintf("img_%s_%s", time.Now().Format("20060102_150405"), randomHex(4))
 
 			job := ImageJob{
 				JobID:       jobID,
@@ -242,14 +244,34 @@ func saveImageToWorkspace(ctx sdk.Context, job ImageJob, rawImage string) (strin
 		ext = "webp"
 	}
 
-	// Unique filename in images_generated/ without collisions
-	fileName := fmt.Sprintf("img_%d_%s.%s", time.Now().UnixNano(), job.JobID, ext)
-	wsPath := fmt.Sprintf("images_generated/%s", fileName)
+	// Format timestamp (YYYYMMDD_HHMMSS) + random hex for collision-free sorting
+	timePrefix := time.Now().Format("20060102_150405")
 
-	wsResp, err := ctx.Workspace().SaveFile(wsPath, rawBytes, mime)
-	if err != nil {
-		ctx.Log().Error("Failed to save image into workspace", "err", err, "path", wsPath)
-		return "", fmt.Errorf("workspace save error: %w", err)
+	var wsResp *sdk.WorkspaceFileResponse
+	var wsPath string
+	var err error
+
+	// Retry with a newly generated random token to guarantee zero unique-constraint conflicts
+	for attempt := 0; attempt < 3; attempt++ {
+		fileName := fmt.Sprintf("img_%s_%s.%s", timePrefix, randomHex(6), ext)
+		wsPath = fmt.Sprintf("images_generated/%s", fileName)
+
+		wsResp, err = ctx.Workspace().SaveFile(wsPath, rawBytes, mime)
+		if err == nil && wsResp != nil && wsResp.Error == "" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err != nil || wsResp == nil || wsResp.Error != "" {
+		errMsg := "unknown error"
+		if err != nil {
+			errMsg = err.Error()
+		} else if wsResp != nil {
+			errMsg = wsResp.Error
+		}
+		ctx.Log().Error("Failed to save image into workspace", "err", errMsg, "path", wsPath)
+		return "", fmt.Errorf("workspace save error: %s", errMsg)
 	}
 
 	// Construct raw workspace URL by node ID: /api/workspace/raw?id=<uuid>
@@ -265,6 +287,15 @@ func saveImageToWorkspace(ctx sdk.Context, job ImageJob, rawImage string) (strin
 	ctx.Log().Info("Persisted generated image into workspace", "path", wsPath, "node_id", wsResp.ID, "url", resultURL)
 	runtime.GC()
 	return resultURL, nil
+}
+
+// randomHex generates n cryptographically random bytes encoded as a hex string (2n characters).
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 // ============================================================================
