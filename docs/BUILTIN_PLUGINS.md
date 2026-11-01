@@ -30,6 +30,19 @@ This document lists all official, ready-to-deploy built-in plugins provided in t
 
 ---
 
+## ✉️ 3. Mail and Calendar Providers (`plugins/mail/`)
+
+These plugins implement the `mail@1` / `calendar@1` ABI. ActonOS signs the user in (bring-your-own OAuth client) and keeps the refresh token; the plugin only receives short-lived access tokens, and every send or calendar write goes through ActonOS's rules and approval gate first. See [MAILCAL_PLUGIN_GUIDE.md](MAILCAL_PLUGIN_GUIDE.md).
+
+| Plugin Name | ID | Sign-in | Egress Whitelist | OAuth scopes |
+|:---|:---|:---|:---|:---|
+| **Gmail + Google Calendar** | `mailcal-gmail` | OAuth (`google`) | `gmail.googleapis.com`, `www.googleapis.com` | `gmail.modify`, `calendar.events`, `calendar.freebusy` |
+| **Outlook / Microsoft 365** | `mailcal-graph` | OAuth (`microsoft`) | `graph.microsoft.com` | `offline_access`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite` |
+
+The `send_email` and `create_calendar_event` actions of **Google Workspace** above are deprecated in favour of `mailcal-gmail`.
+
+---
+
 ## 📦 How to Build and Package All Plugins
 
 Build and package any plugin into a distributable `.actonpkg` bundle using the CLI toolchain:

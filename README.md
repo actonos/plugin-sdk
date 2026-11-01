@@ -19,6 +19,7 @@ ActonOS uses a sandboxed **WasmLoader** architecture to safely run third-party e
 - 🛡️ **Fail-Closed Sandboxing**: Capability-based security model enforcing Domain Egress Firewall, Hardware Vault isolation, and SQLite KV storage boundaries.
 - 🧪 **Built-in Mock Host**: Test WASM plugins locally using an embedded Wazero sandbox harness without needing a live ActonOS daemon.
 - 🔐 **Cryptographic Signing**: Ed25519 public-key signature verification ensuring plugin code integrity and tamper-proofing.
+- ✉️ **Mail & Calendar Providers**: Build `mail@1` / `calendar@1` provider plugins with `sdk/mailcal`, certify them with `acton-plugin conformance`. Ships Gmail + Google Calendar and Outlook / Microsoft 365. See the [Mail & Calendar Plugin Guide](docs/MAILCAL_PLUGIN_GUIDE.md).
 - 🚀 **One-Stop Developer CLI (`acton-plugin`)**: Complete workflow for scaffolding (`new`), building (`build`), testing (`test`), validating (`validate`), signing (`sign`), and packaging (`pack`).
 
 ---
@@ -73,6 +74,7 @@ ActonOS-Plugin-SDK/
 ├── cmd/acton-plugin/        # Developer CLI Toolchain
 ├── plugins/                 # Built-in Official Plugins
 │   ├── channels/            # Chat channels (Discord, Slack, Telegram, WhatsApp, Zalo)
+│   ├── mail/                # Mail & calendar providers (Gmail, Outlook / Microsoft 365)
 │   └── saas/                # SaaS connectors (Figma, GitHub, Google, Jira, Linear, Notion, Slack)
 ├── spec/                    # Formal ABI & Manifest specifications
 └── docs/                    # Complete developer documentation
@@ -84,6 +86,7 @@ ActonOS-Plugin-SDK/
 
 - [Getting Started Guide](docs/GETTING_STARTED.md)
 - [Developer Guide (Tools, Channels, Connectors)](docs/DEVELOPER_GUIDE.md)
+- [Mail & Calendar Plugin Guide](docs/MAILCAL_PLUGIN_GUIDE.md)
 - [CLI Reference Guide](docs/CLI_GUIDE.md)
 - [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md)
 - [WASM ABI Specification](spec/WASM_ABI.md)

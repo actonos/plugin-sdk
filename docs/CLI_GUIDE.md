@@ -9,8 +9,9 @@ The `acton-plugin` command-line utility facilitates the entire lifecycle of deve
 ### `new` / `init`
 Scaffolds a new plugin directory from templates.
 ```bash
-acton-plugin new <name> [--type=tool|channel|connector] [--dir=target_directory]
+acton-plugin new [--type=tool|channel|connector|mailcal] [--dir=target_directory] <name>
 ```
+Flags must come before the name (the CLI uses Go's `flag` package). `--type=mailcal` scaffolds a mail provider that already passes `conformance`; create it inside this repository, for example `--dir=plugins/mail/my-mail`.
 
 ### `build`
 Compiles the Go plugin into WebAssembly using the WASI reactor shared-library target.
@@ -22,6 +23,12 @@ acton-plugin build [--source=.] [--output=dist/plugin.wasm] [--tinygo]
 Validates `manifest.json` against semantic schemas, checks capability consistency, and warns about over-permissive domain egress.
 ```bash
 acton-plugin validate [--manifest=manifest.json]
+```
+
+### `conformance`
+Runs the mail/calendar contract suite offline (no token, no network) against a compiled provider and writes `conformance.json` (with the SHA-256 of that exact `.wasm`) next to it. Only for plugins that declare `mail@1` or `calendar@1`.
+```bash
+acton-plugin conformance [--wasm=dist/plugin.wasm] [--manifest=manifest.json]
 ```
 
 ### `test`

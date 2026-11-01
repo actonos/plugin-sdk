@@ -11,3 +11,6 @@ ActonOS SaaS Connector and Agent Tools integration for Google Workspace (Gmail, 
 ## Permissions
 - `net_outbound`: `["gmail.googleapis.com", "www.googleapis.com"]`
 - `secrets`: `["google_workspace_access_token"]`
+
+## Deprecated actions
+`send_email` and `create_calendar_event` are deprecated. They use a pasted access token and bypass ActonOS's rules and approval gate. Use the `mailcal-gmail` plugin (`plugins/mail/gmail`) for Gmail and Google Calendar. Drive and Docs actions are unchanged.

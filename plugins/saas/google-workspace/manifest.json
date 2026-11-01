@@ -2,7 +2,7 @@
   "id": "connector-google-workspace",
   "name": "Google Workspace Connector",
   "version": "1.0.0",
-  "description": "Google Workspace integration for ActonOS AI agents (Gmail, Google Calendar, Google Drive, Google Docs)",
+  "description": "Google Workspace integration for ActonOS AI agents (Gmail, Google Calendar, Google Drive, Google Docs). Its Gmail and Calendar actions are deprecated: use the mailcal-gmail plugin instead.",
   "author": "ActonOS Core Team",
   "license": "MIT",
   "capabilities": ["connector", "tool"],
@@ -37,7 +37,7 @@
   "tools": [
     {
       "name": "connector_google-workspace_send_email",
-      "description": "Send an email via Gmail API",
+      "description": "[Deprecated: use the mailcal-gmail plugin, which goes through ActonOS's approval rules] Send an email via Gmail API",
       "category": "google",
       "parameters": {
         "type": "object",
@@ -60,7 +60,7 @@
     },
     {
       "name": "connector_google-workspace_create_calendar_event",
-      "description": "Schedule a meeting or calendar event via Google Calendar API",
+      "description": "[Deprecated: use the mailcal-gmail plugin, which goes through ActonOS's approval rules] Schedule a meeting or calendar event via Google Calendar API",
       "category": "google",
       "parameters": {
         "type": "object",

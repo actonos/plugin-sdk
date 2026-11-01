@@ -5,6 +5,30 @@ All notable changes to the ActonOS Plugin SDK are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-11-01
+
+Mail and calendar provider plugins. The WASM syscall ABI stays `1.0.0`; the mail/calendar ABI is `mail@1` / `calendar@1`, byte-compatible with the ActonOS core.
+
+### Added
+
+- `sdk/mailcal/...`: the provider kit (`abi`, `Backend`/`Base`/`Dispatch`, `netio`, `guest`, `mimekit`, `conformance`, `certificate`).
+- Plugins `mailcal-gmail` (Gmail + Google Calendar) and `mailcal-graph` (Outlook / Microsoft 365) in `plugins/mail/`.
+- `acton-plugin conformance` and `acton-plugin new --type=mailcal`.
+- Manifest: capabilities `mail@1` / `calendar@1`, the `oauth` block, `permissions.oauth`, `permissions.credentials`, `permissions.net_tcp`; `validate` enforces the provider rules.
+- `host.MockHost`: `acton_oauth` module (`SetOAuthToken`, `ExpireOAuthAccount`, `DenyOAuthAccount`) and `PluginRunner.CallJSON`.
+- Registry entries carry a `category`; mail/calendar plugins list as `connector`.
+
+### Changed
+
+- `MockHost` `acton_sys.read_response` returns the number of bytes copied (as the ActonOS core does).
+- `MockHost` calls `acton_plugin_init` with as many zero arguments as the plugin declares.
+
+### Deprecated
+
+- `send_email` and `create_calendar_event` of `connector-google-workspace`; use `mailcal-gmail`.
+
+IMAP/SMTP and CalDAV providers are planned and not part of this release.
+
 ## [1.2.0] - 2026-08-25
 
 Canonical multi-account config and a shared inbound/outbound envelope for chat channels (typing, reactions, quote replies).
