@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/actonos/plugin-sdk/sdk"
+	"github.com/actonos/plugin-sdk/sdk/mailcal/certificate"
 )
 
 const (
@@ -179,6 +180,23 @@ func runBuildAll(args []string) error {
 				status: "FAILED",
 			})
 			continue
+		}
+
+		// Mail and calendar providers must pass the contract suite before they are published; the
+		// certificate (bound to these exact bytes) is written next to the package, not committed.
+		if isMailcal(manifest) {
+			wasmBytes, _ := os.ReadFile(wasmOut)
+			cert, err := certifyMailProvider(os.Stdout, wasmBytes, manifest, "conformance")
+			if err != nil {
+				fmt.Printf("   ❌ %v\n", err)
+				results = append(results, buildResult{id: pluginID, rel: pluginDir, status: "FAILED"})
+				continue
+			}
+			if err := certificate.Write(filepath.Join(*distDir, pluginID+".conformance.json"), cert); err != nil {
+				fmt.Printf("   ❌ writing the certificate: %v\n", err)
+				results = append(results, buildResult{id: pluginID, rel: pluginDir, status: "FAILED"})
+				continue
+			}
 		}
 
 		// Also update plugin/dist/plugin.wasm for local testing

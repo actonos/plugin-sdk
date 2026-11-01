@@ -56,6 +56,10 @@ func TestMailManifestViolationsAreErrors(t *testing.T) {
 		{"two oauth providers", func(m *sdk.PluginManifest) { m.Permissions.OAuth = []string{"google", "microsoft"} }, "must match"},
 		{"plain http token url", func(m *sdk.PluginManifest) { m.OAuth.TokenURL = "http://oauth2.googleapis.com/token" }, "https"},
 		{"no scopes", func(m *sdk.PluginManifest) { m.OAuth.Scopes = nil }, "scopes"},
+		{"permanent delete scope hidden in a space-joined entry", func(m *sdk.PluginManifest) {
+			m.OAuth.Scopes = []string{"https://www.googleapis.com/auth/gmail.modify https://mail.google.com/"}
+		}, "permanent"},
+		{"permanent delete scope with surrounding whitespace", func(m *sdk.PluginManifest) { m.OAuth.Scopes = []string{"  https://mail.google.com/\t"} }, "permanent"},
 		{"permanent delete scope", func(m *sdk.PluginManifest) { m.OAuth.Scopes = []string{"https://mail.google.com/"} }, "permanent"},
 	}
 	for _, tc := range cases {

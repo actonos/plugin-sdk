@@ -17,11 +17,16 @@ Mail and calendar provider plugins. The WASM syscall ABI stays `1.0.0`; the mail
 - Manifest: capabilities `mail@1` / `calendar@1`, the `oauth` block, `permissions.oauth`, `permissions.credentials`, `permissions.net_tcp`; `validate` enforces the provider rules.
 - `host.MockHost`: `acton_oauth` module (`SetOAuthToken`, `ExpireOAuthAccount`, `DenyOAuthAccount`) and `PluginRunner.CallJSON`.
 - Registry entries carry a `category`; mail/calendar plugins list as `connector`.
+- `build-all` certifies mail/calendar providers and writes `dist/<id>.conformance.json`.
 
 ### Changed
 
 - `MockHost` `acton_sys.read_response` returns the number of bytes copied (as the ActonOS core does).
 - `MockHost` calls `acton_plugin_init` with as many zero arguments as the plugin declares.
+
+### Fixed
+
+- `mailcal-graph` rejects an event that does not end after it starts before calling the network.
 
 ### Deprecated
 

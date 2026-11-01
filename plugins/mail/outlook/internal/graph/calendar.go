@@ -154,7 +154,18 @@ func eventBody(ev abi.Event) map[string]any {
 	return body
 }
 
+// checkEventTimes rejects an event that does not end after it starts, before any network call.
+func checkEventTimes(ev abi.Event) error {
+	if !ev.End.After(ev.Start) {
+		return abi.Errorf(abi.ErrInvalid, "an event must end after it starts")
+	}
+	return nil
+}
+
 func (b *Backend) CalendarCreate(ctx context.Context, acct abi.AccountRef, p abi.CalWriteParams) (abi.Event, error) {
+	if err := checkEventTimes(p.Event); err != nil {
+		return abi.Event{}, err
+	}
 	body := eventBody(p.Event)
 	if p.IdempotencyKey != "" {
 		body["transactionId"] = p.IdempotencyKey // Graph de-duplicates creates that carry the same transactionId
@@ -167,6 +178,9 @@ func (b *Backend) CalendarCreate(ctx context.Context, acct abi.AccountRef, p abi
 }
 
 func (b *Backend) CalendarUpdate(ctx context.Context, acct abi.AccountRef, p abi.CalWriteParams) (abi.Event, error) {
+	if err := checkEventTimes(p.Event); err != nil {
+		return abi.Event{}, err
+	}
 	var out gEvent
 	if err := b.do(ctx, acct, "PATCH", "/events/"+url.PathEscape(p.Event.ID), nil, utcPrefer, eventBody(p.Event), &out); err != nil {
 		return abi.Event{}, err

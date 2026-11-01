@@ -74,13 +74,13 @@ go run ./cmd/acton-plugin build --source plugins/mail/my-mail --output plugins/m
 go run ./cmd/acton-plugin conformance --wasm plugins/mail/my-mail/dist/plugin.wasm --manifest plugins/mail/my-mail/manifest.json
 ```
 
-`conformance` runs offline: no token, no network, and every operation that needs an account must answer with a coded error. It writes `conformance.json` holding the SHA-256 of that exact build; change one byte and the certificate no longer matches. A certificate is information for the person installing the plugin, not a security boundary. It is generated at build time and **not committed**, because compiled output differs between Go versions.
+`conformance` runs offline: no token, no network, and every operation that needs an account must answer with a coded error. It catches a provider that lists an operation it does not implement, one that implements an operation it does not list, and a write operation that accepts invalid input. It writes `conformance.json` holding the SHA-256 of that exact build; change one byte and the certificate no longer matches. A certificate is information for the person installing the plugin, not a security boundary. It is generated at build time and **not committed**, because compiled output differs between Go versions.
 
 To test a compiled plugin against fake services use `host.MockHost`: `SetOAuthToken`, `ExpireOAuthAccount`, `DenyOAuthAccount` and `MockHTTPRoute`, then `mailcal.NewBridgeProvider(runner)` for a typed view (see `plugins/mail/gmail/wasm_test.go`).
 
 ## 6. Package and publish
 
-`acton-plugin build-all --plugin <id>` builds `dist/<id>.wasm` and `dist/<id>.actonpkg` and adds the plugin to `dist/plugin-registry.json` with its capabilities, hash, size and `category: "connector"`. ActonOS lists and installs plugins from this repository's GitHub release, so a plugin published there appears in its plugin marketplace. The package carries the manifest including the `oauth` block, which the core needs to run sign-in.
+`acton-plugin build-all --plugin <id>` builds `dist/<id>.wasm` and `dist/<id>.actonpkg`, runs the conformance suite on a mail/calendar provider (a plugin that fails is not published), writes `dist/<id>.conformance.json`, and adds the plugin to `dist/plugin-registry.json` with its capabilities, hash, size and `category: "connector"`. The certificate is not placed inside the `.actonpkg`: whether the core's installer accepts or reads an extra file there has not been verified, so installed plugins may still show as unverified. ActonOS lists and installs plugins from this repository's GitHub release, so a plugin published there appears in its plugin marketplace. The package carries the manifest including the `oauth` block, which the core needs to run sign-in.
 
 ## 7. Keeping the ABI in sync with the core
 

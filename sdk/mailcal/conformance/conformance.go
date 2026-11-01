@@ -9,6 +9,7 @@ package conformance
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 func ctx() context.Context { return context.Background() }
 
-func requireCode(t *testing.T, err error, code abi.ErrorCode, what string) {
+func requireCode(t T, err error, code abi.ErrorCode, what string) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("%s: expected error %q, got success", what, code)
@@ -32,15 +33,39 @@ func requireCode(t *testing.T, err error, code abi.ErrorCode, what string) {
 	}
 }
 
-func requireOK(t *testing.T, err error, what string) {
+func requireOK(t T, err error, what string) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("%s: %v", what, err)
 	}
 }
 
-// RunShape checks the contract with acct against any provider.
+// RunShape checks the contract with acct against any provider, under `go test`.
 func RunShape(t *testing.T, p mailcal.Provider, acct abi.AccountRef) {
+	t.Helper()
+	Check(testingT{t}, p, acct)
+}
+
+// Verify runs the same checks outside `go test` (for example from a CLI), prints failures to w,
+// and reports whether the provider passed.
+func Verify(w io.Writer, p mailcal.Provider, acct abi.AccountRef) bool {
+	r := NewReporter(w)
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				if _, isStop := rec.(stop); !isStop {
+					panic(rec)
+				}
+			}
+		}()
+		Check(r, p, acct)
+	}()
+	return !r.Failed()
+}
+
+// Check is the contract suite. A failing check ends only its own sub-check; a failure of the
+// Capabilities call ends the whole run.
+func Check(t T, p mailcal.Provider, acct abi.AccountRef) {
 	t.Helper()
 	caps, err := p.Capabilities(ctx(), acct)
 	requireOK(t, err, "Capabilities")
@@ -66,46 +91,68 @@ func RunShape(t *testing.T, p mailcal.Provider, acct abi.AccountRef) {
 		t.Errorf("limits must not be negative: %+v", caps.Limits)
 	}
 
-	// Each operation either works or says "unsupported"; it never returns an uncoded error.
+	// Every operation is probed with unknown ids or invalid input. An operation the provider does
+	// not declare must answer "unsupported"; one it declares must not (that would mean it is
+	// declared but not implemented) and must fail with a coded error, never an uncoded one. For
+	// operations that change something, invalid input must fail: "success" would mean the provider
+	// did something with a message or event that is not valid.
 	type op struct {
-		export string
-		run    func() error
+		export   string
+		mustFail bool
+		run      func() error
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	ops := []op{
-		{abi.ExportMailList, func() error { _, e := p.MailList(ctx(), acct, abi.MailListParams{Limit: 1}); return e }},
-		{abi.ExportMailSearch, func() error { _, e := p.MailSearch(ctx(), acct, abi.MailSearchParams{Query: "x", Limit: 1}); return e }},
-		{abi.ExportMailGet, func() error { _, e := p.MailGet(ctx(), acct, "does-not-exist"); return e }},
-		{abi.ExportMailGetThread, func() error { _, e := p.MailGetThread(ctx(), acct, "does-not-exist"); return e }},
-		{abi.ExportMailSend, func() error { _, e := p.MailSend(ctx(), acct, abi.MailSendParams{}); return e }},
-		{abi.ExportMailMark, func() error { return p.MailMark(ctx(), acct, abi.MailMarkParams{IDs: []string{"does-not-exist"}}) }},
-		{abi.ExportMailMove, func() error {
+		{abi.ExportMailList, false, func() error { _, e := p.MailList(ctx(), acct, abi.MailListParams{Limit: 1}); return e }},
+		{abi.ExportMailSearch, false, func() error {
+			_, e := p.MailSearch(ctx(), acct, abi.MailSearchParams{Query: "x", Limit: 1})
+			return e
+		}},
+		{abi.ExportMailGet, false, func() error { _, e := p.MailGet(ctx(), acct, "does-not-exist"); return e }},
+		{abi.ExportMailGetThread, false, func() error { _, e := p.MailGetThread(ctx(), acct, "does-not-exist"); return e }},
+		{abi.ExportMailCreateDraft, true, func() error { _, e := p.MailCreateDraft(ctx(), acct, abi.MailDraftParams{}); return e }},
+		{abi.ExportMailSend, true, func() error { _, e := p.MailSend(ctx(), acct, abi.MailSendParams{}); return e }},
+		{abi.ExportMailMark, false, func() error { return p.MailMark(ctx(), acct, abi.MailMarkParams{IDs: []string{"does-not-exist"}}) }},
+		{abi.ExportMailMove, false, func() error {
 			return p.MailMove(ctx(), acct, abi.MailMoveParams{IDs: []string{"does-not-exist"}, Folder: "Archive"})
 		}},
-		{abi.ExportMailDelete, func() error { return p.MailDelete(ctx(), acct, abi.MailDeleteParams{IDs: []string{"does-not-exist"}}) }},
-		{abi.ExportCalListEvents, func() error {
+		{abi.ExportMailDelete, false, func() error { return p.MailDelete(ctx(), acct, abi.MailDeleteParams{IDs: []string{"does-not-exist"}}) }},
+		{abi.ExportCalListEvents, false, func() error {
 			_, e := p.CalendarList(ctx(), acct, abi.CalListParams{From: now, To: now.Add(time.Hour)})
 			return e
 		}},
-		{abi.ExportCalGetEvent, func() error { _, e := p.CalendarGet(ctx(), acct, abi.CalGetParams{ID: "does-not-exist"}); return e }},
-		{abi.ExportCalDeleteEvent, func() error { return p.CalendarDelete(ctx(), acct, abi.CalDeleteParams{ID: "does-not-exist"}) }},
-		{abi.ExportCalFreeBusy, func() error {
+		{abi.ExportCalGetEvent, false, func() error { _, e := p.CalendarGet(ctx(), acct, abi.CalGetParams{ID: "does-not-exist"}); return e }},
+		{abi.ExportCalCreateEvent, true, func() error { _, e := p.CalendarCreate(ctx(), acct, abi.CalWriteParams{}); return e }},
+		{abi.ExportCalUpdateEvent, true, func() error {
+			_, e := p.CalendarUpdate(ctx(), acct, abi.CalWriteParams{Event: abi.Event{ID: "does-not-exist"}})
+			return e
+		}},
+		{abi.ExportCalRespond, true, func() error {
+			_, e := p.CalendarRespond(ctx(), acct, abi.CalRespondParams{ID: "does-not-exist", Response: "maybe"})
+			return e
+		}},
+		{abi.ExportCalDeleteEvent, false, func() error { return p.CalendarDelete(ctx(), acct, abi.CalDeleteParams{ID: "does-not-exist"}) }},
+		{abi.ExportCalFreeBusy, false, func() error {
 			_, e := p.CalendarFreeBusy(ctx(), acct, abi.FreeBusyParams{Emails: []string{"a@example.com"}, From: now, To: now.Add(time.Hour)})
 			return e
 		}},
 	}
 	for _, o := range ops {
 		o := o
-		t.Run("contract/"+o.export, func(t *testing.T) {
+		t.Run("contract/"+o.export, func(t T) {
 			err := o.run()
 			if !caps.Supports(o.export) {
 				requireCode(t, err, abi.ErrUnsupported, o.export+" not declared")
 				return
 			}
-			// Supported operations with bad or unknown input must fail with a coded error,
-			// never succeed silently and never return a transport-level error.
+			if mailcal.IsCode(err, abi.ErrUnsupported) {
+				t.Fatalf("%s is listed in Capabilities.Ops but answers unsupported; implement it or remove it from Ops", o.export)
+			}
 			if err != nil && mailcal.AsError(err) == nil {
 				t.Fatalf("%s returned an uncoded error: %v", o.export, err)
+			}
+			if err == nil && o.mustFail {
+				t.Fatalf("%s accepted invalid input without an error", o.export)
 			}
 		})
 	}

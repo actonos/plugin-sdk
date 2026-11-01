@@ -81,9 +81,14 @@ func validateMailcal(m sdk.PluginManifest) (errs, warns []string) {
 		if len(o.Scopes) == 0 {
 			errs = append(errs, "oauth.scopes must list at least one scope (ask for the narrowest that works)")
 		}
-		for _, s := range o.Scopes {
-			if s == permanentDeleteScope {
-				errs = append(errs, "oauth.scopes must not include the permanent-delete scope "+permanentDeleteScope)
+		// The core joins the entries with spaces into one scope parameter, so an entry may hold several scopes.
+	scopes:
+		for _, entry := range o.Scopes {
+			for _, s := range strings.Fields(entry) {
+				if s == permanentDeleteScope {
+					errs = append(errs, "oauth.scopes must not include the permanent-delete scope "+permanentDeleteScope)
+					break scopes
+				}
 			}
 		}
 	}

@@ -1,0 +1,7 @@
+{
+  "id": "mailcal-broken",
+  "name": "Broken",
+  "version": "1.0.0",
+  "capabilities": ["mail@1"],
+  "permissions": {}
+}
