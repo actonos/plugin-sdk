@@ -10,7 +10,7 @@ import (
 
 func runNew(args []string) error {
 	fs := flag.NewFlagSet("new", flag.ContinueOnError)
-	pluginType := fs.String("type", "tool", "Plugin capability type: 'tool', 'channel', or 'connector'")
+	pluginType := fs.String("type", "tool", "Plugin capability type: 'tool', 'channel', 'connector', or 'mailcal'")
 	outputDir := fs.String("dir", "", "Target directory (defaults to plugin name)")
 
 	if err := fs.Parse(args); err != nil {
@@ -30,13 +30,17 @@ func runNew(args []string) error {
 
 	pluginTypeLower := strings.ToLower(*pluginType)
 	switch pluginTypeLower {
-	case "tool", "channel", "connector":
+	case "tool", "channel", "connector", "mailcal":
 	default:
-		return fmt.Errorf("invalid plugin type '%s', must be 'tool', 'channel', or 'connector'", *pluginType)
+		return fmt.Errorf("invalid plugin type '%s', must be 'tool', 'channel', 'connector', or 'mailcal'", *pluginType)
 	}
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating directory '%s': %w", targetDir, err)
+	}
+
+	if pluginTypeLower == "mailcal" {
+		return scaffoldMailcal(pluginName, targetDir)
 	}
 
 	// 1. Generate manifest.json
