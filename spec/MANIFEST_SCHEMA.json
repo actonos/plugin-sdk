@@ -34,7 +34,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["tool", "channel", "connector"]
+        "enum": ["tool", "channel", "connector", "mail@1", "calendar@1"]
       },
       "minItems": 1,
       "description": "Functional capabilities exposed by the plugin"
@@ -66,8 +66,34 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Event topics the plugin is allowed to emit"
+        },
+        "net_tcp": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^:]+:[0-9]+$" },
+          "description": "TLS endpoints as host:port for acton_tcp (mail/calendar providers)"
+        },
+        "credentials": {
+          "type": "boolean",
+          "default": false,
+          "description": "May read the username and password of the plugin's own password accounts"
+        },
+        "oauth": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "OAuth providers whose short-lived access tokens the plugin may request (for example google)"
         }
       }
+    },
+    "oauth": {
+      "type": "object",
+      "required": ["provider", "auth_url", "token_url", "scopes"],
+      "properties": {
+        "provider": { "type": "string" },
+        "auth_url": { "type": "string", "pattern": "^https://" },
+        "token_url": { "type": "string", "pattern": "^https://" },
+        "scopes": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      },
+      "description": "How the core signs a user in to a mail/calendar provider. The core keeps the refresh token."
     },
     "tools": {
       "type": "array",

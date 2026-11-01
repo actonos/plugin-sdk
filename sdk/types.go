@@ -22,6 +22,9 @@ const (
 	CapabilityTool      Capability = "tool"
 	CapabilityChannel   Capability = "channel"
 	CapabilityConnector Capability = "connector"
+	// Mail and calendar provider capabilities. The number is the ABI version.
+	CapabilityMail     Capability = "mail@1"
+	CapabilityCalendar Capability = "calendar@1"
 )
 
 // PluginManifest defines the complete metadata and permission declaration of a plugin.
@@ -37,6 +40,7 @@ type PluginManifest struct {
 	Tools        []ToolInfo      `json:"tools,omitempty"`
 	Channels     []ChannelInfo   `json:"channels,omitempty"`
 	Connectors   []ConnectorInfo `json:"connectors,omitempty"`
+	OAuth        *OAuthConfig    `json:"oauth,omitempty"`
 	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
 	Config       map[string]any  `json:"config,omitempty"`
 }
@@ -46,7 +50,20 @@ type Permissions struct {
 	NetOutbound []string `json:"net_outbound,omitempty"` // Whitelisted domains (e.g. *.telegram.org, api.github.com)
 	Secrets     []string `json:"secrets,omitempty"`      // Hardware Vault keys requested
 	Storage     bool     `json:"storage,omitempty"`      // Enable isolated SQLite KV storage
+	Workspace   bool     `json:"workspace,omitempty"`    // Enable User Workspace file access
 	BusEvents   []string `json:"bus_events,omitempty"`   // Allowed event bus topics
+	NetTCP      []string `json:"net_tcp,omitempty"`      // "host:port" TLS endpoints for acton_tcp
+	Credentials bool     `json:"credentials,omitempty"`  // May read the username/password of the plugin's own password accounts
+	OAuth       []string `json:"oauth,omitempty"`        // OAuth providers whose short-lived access tokens the plugin may request
+}
+
+// OAuthConfig tells the core how to sign a user in to a provider plugin's service. The core
+// runs the flow and keeps the refresh token; the plugin only receives short-lived access tokens.
+type OAuthConfig struct {
+	Provider string   `json:"provider"`
+	AuthURL  string   `json:"auth_url"`
+	TokenURL string   `json:"token_url"`
+	Scopes   []string `json:"scopes"`
 }
 
 // ToolInfo describes a tool callable by ActonOS ReAct Agent swarms.

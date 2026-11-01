@@ -53,7 +53,7 @@ func runValidate(args []string) error {
 	}
 
 	if len(manifest.Capabilities) == 0 {
-		errors = append(errors, "missing required field 'capabilities' (must declare at least one: 'tool', 'channel', 'connector')")
+		errors = append(errors, "missing required field 'capabilities' (must declare at least one: 'tool', 'channel', 'connector', 'mail@1', 'calendar@1')")
 	}
 
 	// 2. Capability matches & Duplicate checks
@@ -101,6 +101,8 @@ func runValidate(args []string) error {
 			if len(manifest.Connectors) == 0 {
 				warnings = append(warnings, "declared capability 'connector' but 'connectors' list is empty")
 			}
+		case sdk.CapabilityMail, sdk.CapabilityCalendar:
+			// Provider plugins export the mail/calendar ABI instead of listing tools.
 		default:
 			errors = append(errors, fmt.Sprintf("unknown capability '%s'", cap))
 		}
@@ -119,6 +121,10 @@ func runValidate(args []string) error {
 			}
 		}
 	}
+
+	mailErrs, mailWarns := validateMailcal(manifest)
+	errors = append(errors, mailErrs...)
+	warnings = append(warnings, mailWarns...)
 
 	// Output report
 	fmt.Printf("🔍 Validating '%s'...\n\n", *manifestPath)
