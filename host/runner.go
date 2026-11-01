@@ -75,7 +75,8 @@ func (h *MockHost) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte) (*
 func (r *PluginRunner) Init() error {
 	initFunc := r.mod.ExportedFunction("acton_plugin_init")
 	if initFunc != nil {
-		results, err := initFunc.Call(r.ctx)
+		args := make([]uint64, len(initFunc.Definition().ParamTypes()))
+		results, err := initFunc.Call(r.ctx, args...)
 		if err != nil {
 			return err
 		}

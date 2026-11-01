@@ -31,6 +31,9 @@ type MockHost struct {
 	wsConns          map[int32]*mockHostWSConn
 	workspaceFiles   map[string]mockWorkspaceFile
 	nextWSHandle     int32
+	oauthTokens      map[string]string
+	oauthExpired     map[string]bool
+	oauthDenied      map[string]bool
 }
 
 type mockWorkspaceFile struct {
@@ -81,6 +84,9 @@ func NewMockHost(ctx context.Context) (*MockHost, error) {
 		wsConns:          make(map[int32]*mockHostWSConn),
 		workspaceFiles:   make(map[string]mockWorkspaceFile),
 		nextWSHandle:     1,
+		oauthTokens:      make(map[string]string),
+		oauthExpired:     make(map[string]bool),
+		oauthDenied:      make(map[string]bool),
 	}
 
 	if err := h.registerHostModules(ctx); err != nil {
@@ -173,7 +179,7 @@ func (h *MockHost) registerHostModules(ctx context.Context) error {
 			if !mod.Memory().Write(destPtr, data[:writeLen]) {
 				return -1
 			}
-			return 0
+			return int32(writeLen) // the core reports the bytes copied; mail guests check it
 		}).
 		Export("read_response")
 
@@ -538,6 +544,10 @@ func (h *MockHost) registerHostModules(ctx context.Context) error {
 		Export("read_file")
 
 	if _, err := wsFileBuilder.Instantiate(ctx); err != nil {
+		return err
+	}
+
+	if err := h.registerOAuthModule(ctx); err != nil {
 		return err
 	}
 
