@@ -23,6 +23,7 @@ COMMANDS:
   build            Compile the plugin to WebAssembly (GOOS=wasip1 GOARCH=wasm)
   build-all        Batch compile and package all plugins in plugins/ to dist/
   validate         Validate manifest.json schema, permissions, and security
+  conformance      Run the mail/calendar contract suite on a compiled provider (offline)
   test             Execute plugin verification on local Wazero Mock Host
   sign             Sign plugin bundle using Ed25519 cryptographic key
   pack             Package plugin into a distribution bundle (.actonpkg)
@@ -61,6 +62,8 @@ func main() {
 		err = runBuild(args)
 	case "validate":
 		err = runValidate(args)
+	case "conformance":
+		err = runConformance(args)
 	case "test":
 		err = runTest(args)
 	case "sign":

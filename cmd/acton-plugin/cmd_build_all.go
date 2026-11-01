@@ -41,6 +41,7 @@ type PluginRegistryEntry struct {
 	Author       string           `json:"author,omitempty"`
 	License      string           `json:"license,omitempty"`
 	Capabilities []sdk.Capability `json:"capabilities"`
+	Category     string           `json:"category,omitempty"`
 	Filename     string           `json:"filename"`
 	DownloadURL  string           `json:"download_url"`
 	SizeBytes    int64            `json:"size_bytes"`
@@ -231,6 +232,7 @@ func runBuildAll(args []string) error {
 			Author:       manifest.Author,
 			License:      manifest.License,
 			Capabilities: manifest.Capabilities,
+			Category:     categoryFor(manifest.Capabilities),
 			Filename:     pkgFilename,
 			DownloadURL:  downloadURL,
 			SizeBytes:    pkgInfo.Size(),

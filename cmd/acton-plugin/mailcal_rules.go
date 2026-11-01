@@ -89,3 +89,15 @@ func validateMailcal(m sdk.PluginManifest) (errs, warns []string) {
 	}
 	return errs, warns
 }
+
+// categoryFor picks the marketplace category for a registry entry. Mail and calendar providers
+// are service integrations, so they list under "connector"; for every other plugin the core
+// derives the category itself, so the field is left empty.
+func categoryFor(caps []sdk.Capability) string {
+	for _, c := range caps {
+		if c == sdk.CapabilityMail || c == sdk.CapabilityCalendar {
+			return "connector"
+		}
+	}
+	return ""
+}
